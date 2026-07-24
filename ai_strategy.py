@@ -73,9 +73,9 @@ def ai_signal(df, regime, atr, config=Config):
         )
         data = json.loads(response.text)
         return Signal(data["signal"]), data["reasoning"]
-    except Exception:
+    except Exception as exc:
         logger.exception("AI signal call failed; defaulting to hold")
-        return Signal.HOLD, "AI call failed; defaulting to hold (fail-safe)."
+        return Signal.HOLD, f"AI call failed ({type(exc).__name__}: {exc}); defaulting to hold (fail-safe)."
 
 
 def decide_with_ai(df, config=Config) -> StrategyDecision:
