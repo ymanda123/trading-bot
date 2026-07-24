@@ -9,6 +9,7 @@ import time
 
 import ccxt
 import pandas as pd
+import requests
 
 from config import Config
 from risk_manager import RiskManager
@@ -16,6 +17,12 @@ from strategy import Signal, decide
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("trading-bot")
+
+# Binance geo-blocks a meaningful share of hosting networks ("restricted
+# location" per its terms) — confirmed to affect at least one deployment
+# target. These give fetch_ohlcv_df somewhere to fall back to so the bot
+# still sees prices even when Binance itself is unreachable from the host.
+_COINBASE_GRANULARITY = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "6h": 21600, "1d": 86400}
 
 
 def build_exchange(config=Config) -> ccxt.Exchange:
@@ -30,12 +37,65 @@ def build_exchange(config=Config) -> ccxt.Exchange:
     return exchange
 
 
+def _to_coinbase_product(symbol: str) -> str:
+    base, quote = symbol.split("/")
+    return f"{base}-{'USD' if quote == 'USDT' else quote}"
+
+
+def _to_kraken_pair(symbol: str) -> str:
+    base, quote = symbol.split("/")
+    base = "XBT" if base == "BTC" else base
+    return f"{base}{'USD' if quote == 'USDT' else quote}"
+
+
+def _fetch_ohlcv_coinbase(config, limit: int) -> pd.DataFrame:
+    granularity = _COINBASE_GRANULARITY.get(config.TIMEFRAME, 3600)
+    resp = requests.get(
+        f"https://api.exchange.coinbase.com/products/{_to_coinbase_product(config.SYMBOL)}/candles",
+        params={"granularity": granularity},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    rows = sorted(resp.json(), key=lambda r: r[0])[-limit:]  # [time_s, low, high, open, close, volume]
+    df = pd.DataFrame(rows, columns=["timestamp", "low", "high", "open", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+    return df[["timestamp", "open", "high", "low", "close", "volume"]]
+
+
+def _fetch_ohlcv_kraken(config, limit: int) -> pd.DataFrame:
+    granularity = _COINBASE_GRANULARITY.get(config.TIMEFRAME, 3600)
+    resp = requests.get(
+        "https://api.kraken.com/0/public/OHLC",
+        params={"pair": _to_kraken_pair(config.SYMBOL), "interval": max(granularity // 60, 1)},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    if body.get("error"):
+        raise RuntimeError(f"Kraken error: {body['error']}")
+    result_key = next(k for k in body["result"] if k != "last")
+    rows = body["result"][result_key][-limit:]
+    df = pd.DataFrame(rows, columns=["timestamp", "open", "high", "low", "close", "vwap", "volume", "count"])
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+    for col in ("open", "high", "low", "close"):
+        df[col] = df[col].astype(float)
+    return df[["timestamp", "open", "high", "low", "close", "volume"]]
+
+
 def fetch_ohlcv_df(exchange: ccxt.Exchange, config=Config) -> pd.DataFrame:
     limit = max(config.SLOW_MA_PERIOD, config.ATR_PERIOD) + 5
-    raw = exchange.fetch_ohlcv(config.SYMBOL, timeframe=config.TIMEFRAME, limit=limit)
-    df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])
-    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
-    return df
+    try:
+        raw = exchange.fetch_ohlcv(config.SYMBOL, timeframe=config.TIMEFRAME, limit=limit)
+        df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])
+        df["timestamp"] = pd.to_datetime(df["timestamp"], unit="ms")
+        return df
+    except Exception as binance_exc:
+        logger.warning("Binance fetch failed (%s); falling back to Coinbase", binance_exc)
+    try:
+        return _fetch_ohlcv_coinbase(config, limit)
+    except Exception as coinbase_exc:
+        logger.warning("Coinbase fallback failed (%s); falling back to Kraken", coinbase_exc)
+    return _fetch_ohlcv_kraken(config, limit)
 
 
 class TradingBot:
