@@ -26,7 +26,7 @@ logger = logging.getLogger("trading-bot")
 
 _client = None
 
-_GEMINI_MODEL = "gemini-2.0-flash"
+_GEMINI_MODEL = "gemini-flash-latest"
 
 
 def _get_client():
