@@ -12,6 +12,8 @@ services:
         sync: false
       - key: CONTROL_TOKEN
         sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
       - key: ALLOWED_ORIGIN
         value: https://ymanda123.github.io
       - key: SYMBOL

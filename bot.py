@@ -11,9 +11,10 @@ import ccxt
 import pandas as pd
 import requests
 
+from ai_strategy import decide_with_ai
 from config import Config
 from risk_manager import RiskManager
-from strategy import Signal, decide
+from strategy import Signal
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("trading-bot")
@@ -120,7 +121,7 @@ class TradingBot:
             return
 
         df = fetch_ohlcv_df(self.exchange, self.config)
-        decision = decide(df, self.config)
+        decision = decide_with_ai(df, self.config)
         price = df["close"].iloc[-1]
         self.last_decision = decision
         self.last_price = price
