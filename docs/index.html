@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Regime-Switching Trading Bot</title>
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --series-1:       #2a78d6; /* blue   - range-bound regime / fast MA */
+    --series-3:       #1baf7a; /* aqua   - trending regime / slow MA */
+    --seq-250:        #86b6ef;
+    --seq-400:        #3987e5;
+    --seq-550:        #1c5cab;
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --series-1:       #3987e5;
+      --series-3:       #199e70;
+      --seq-250:        #6da7ec;
+      --seq-400:        #2a78d6;
+      --seq-550:        #184f95;
+      --status-good:     #0ca30c;
+      --status-warning:  #fab219;
+      --status-critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page-plane:     #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --series-1:       #3987e5;
+    --series-3:       #199e70;
+    --seq-250:        #6da7ec;
+    --seq-400:        #2a78d6;
+    --seq-550:        #184f95;
+    --status-good:     #0ca30c;
+    --status-warning:  #fab219;
+    --status-critical: #e66767;
+  }
+
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .viz-root {
+    background: var(--page-plane);
+    color: var(--text-primary);
+    min-height: 100vh;
+    padding: 24px 16px 64px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+
+  header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: var(--text-secondary); font-size: 14px; margin: 0; }
+  .repo-link { color: var(--series-1); text-decoration: none; font-size: 13px; }
+  .repo-link:hover { text-decoration: underline; }
+
+  .theme-toggle {
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+
+  .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  .tile {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .tile .label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+  .tile .value { font-size: 20px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .badge.regime-range   { background: color-mix(in srgb, var(--series-1) 16%, transparent); color: var(--series-1); }
+  .badge.regime-range .dot   { background: var(--series-1); }
+  .badge.regime-trend   { background: color-mix(in srgb, var(--series-3) 16%, transparent); color: var(--series-3); }
+  .badge.regime-trend .dot   { background: var(--series-3); }
+  .badge.regime-standby  { background: color-mix(in srgb, var(--status-warning) 20%, transparent); color: #8a5a00; }
+  .badge.regime-standby .dot { background: var(--status-warning); }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .badge.regime-standby { color: var(--status-warning); }
+  }
+  :root[data-theme="dark"] .badge.regime-standby { color: var(--status-warning); }
+  .badge.sig-buy  { background: color-mix(in srgb, var(--status-good) 16%, transparent); color: var(--status-good); }
+  .badge.sig-buy .dot { background: var(--status-good); }
+  .badge.sig-sell { background: color-mix(in srgb, var(--status-critical) 16%, transparent); color: var(--status-critical); }
+  .badge.sig-sell .dot { background: var(--status-critical); }
+  .badge.sig-hold { background: color-mix(in srgb, var(--text-muted) 20%, transparent); color: var(--text-secondary); }
+  .badge.sig-hold .dot { background: var(--text-muted); }
+
+  section { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
+  section h2 { font-size: 15px; margin: 0 0 4px; }
+  section .desc { font-size: 13px; color: var(--text-secondary); margin: 0 0 14px; }
+
+  #chart { width: 100%; height: 440px; }
+  #status-line { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+
+  .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media (max-width: 720px) { .tiers { grid-template-columns: 1fr; } }
+  .tier-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .tier-card .chip { display: inline-block; width: 100%; height: 6px; border-radius: 4px; margin-bottom: 10px; }
+  .tier-card .t-label { font-size: 12px; color: var(--text-muted); }
+  .tier-card .t-value { font-size: 18px; font-weight: 600; margin: 2px 0 8px; }
+  .tier-card .t-sub { font-size: 12px; color: var(--text-secondary); }
+
+  .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  @media (max-width: 720px) { .rules { grid-template-columns: 1fr; } }
+  .rule-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .rule-card .r-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .rule-card .r-body { font-size: 12px; color: var(--text-secondary); }
+
+  details summary { cursor: pointer; font-size: 13px; color: var(--series-1); margin-top: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--gridline); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-muted); font-weight: 500; }
+
+  footer { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 24px; }
+  footer a { color: var(--series-1); }
+</style>
+</head>
+<body>
+<div class="viz-root" id="viz-root">
+  <div class="wrap">
+    <header class="top">
+      <div>
+        <h1>Regime-Switching Trading Bot</h1>
+        <p class="sub">Live BTC/USDT market read · CCXT + Binance Testnet paper-trading engine</p>
+        <a class="repo-link" href="https://github.com/ymanda123/trading-bot" target="_blank" rel="noopener">github.com/ymanda123/trading-bot →</a>
+      </div>
+      <button class="theme-toggle" id="theme-toggle" type="button">Dark mode</button>
+    </header>
+
+    <div class="tiles">
+      <div class="tile">
+        <div class="label">Initial Balance</div>
+        <div class="value">$200.00</div>
+      </div>
+      <div class="tile">
+        <div class="label">Circuit Breaker Floor</div>
+        <div class="value">$160.00</div>
+      </div>
+      <div class="tile">
+        <div class="label">Current Regime (live, 14-period ATR)</div>
+        <div class="value" id="regime-badge">—</div>
+      </div>
+      <div class="tile">
+        <div class="label">Current Signal</div>
+        <div class="value" id="signal-badge">—</div>
+      </div>
+    </div>
+
+    <section>
+      <h2>BTC/USDT — 1h</h2>
+      <p class="desc">Live public market data from Binance, with the bot's fast(10)/slow(30) moving averages overlaid.</p>
+      <div id="chart"></div>
+      <div id="status-line">Loading live market data…</div>
+      <details>
+        <summary>Show underlying candles as a table</summary>
+        <table id="candle-table"><thead>
+          <tr><th>Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th></tr>
+        </thead><tbody></tbody></table>
+      </details>
+    </section>
+
+    <section>
+      <h2>Regime Classification</h2>
+      <p class="desc">14-period ATR, expressed as a percentage of price, routes to one of three regimes.</p>
+      <div class="rules">
+        <div class="rule-card">
+          <div class="r-title"><span class="badge regime-range"><span class="dot"></span>Range-Bound</span></div>
+          <div class="r-body">ATR ≤ 1% of price. Grid / mean-reversion: buy at support, sell at resistance.</div>
+        </div>
+        <div class="rule-card">
+          <div class="r-title"><span class="badge regime-trend"><span class="dot"></span>Trending</span></div>
+          <div class="r-body">1% &lt; ATR &lt; 3% of price. Fast(10)/Slow(30) moving-average crossover.</div>
+        </div>
+        <div class="rule-card">
+          <div class="r-title"><span class="badge regime-standby"><span class="dot"></span>Standby</span></div>
+          <div class="r-body">ATR ≥ 3% of price. Volatility spike — no new entries.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Risk Management Guardrails</h2>
+      <p class="desc">Reference rules enforced by <code>risk_manager.py</code> — verified by 16 passing pytest cases.</p>
+
+      <div class="tiers">
+        <div class="tier-card">
+          <span class="chip" style="background:var(--seq-250)"></span>
+          <div class="t-label">Trade 1 (streak = 0)</div>
+          <div class="t-value">100% size</div>
+          <div class="t-sub">2.0× ATR stop</div>
+        </div>
+        <div class="tier-card">
+          <span class="chip" style="background:var(--seq-400)"></span>
+          <div class="t-label">Trade 2 (after 1 loss)</div>
+          <div class="t-value">50% size</div>
+          <div class="t-sub">1.5× ATR stop</div>
+        </div>
+        <div class="tier-card">
+          <span class="chip" style="background:var(--seq-550)"></span>
+          <div class="t-label">Trade 3+ (after 2 losses)</div>
+          <div class="t-value">25% size</div>
+          <div class="t-sub">1.0× ATR stop</div>
+        </div>
+      </div>
+
+      <div class="rules" style="margin-top:14px">
+        <div class="rule-card">
+          <div class="r-title">Circuit Breaker</div>
+          <div class="r-body">Trading halts globally at a 20% drawdown — balance ≤ $160.</div>
+        </div>
+        <div class="rule-card">
+          <div class="r-title">Cool-off</div>
+          <div class="r-body">3 consecutive losses triggers a mandatory 15-minute pause; sizing resets to 100% after.</div>
+        </div>
+        <div class="rule-card">
+          <div class="r-title">Friction</div>
+          <div class="r-body">Every simulated fill deducts a 0.075% taker fee + 0.05% estimated slippage.</div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      This page renders live public market data and the bot's regime/strategy logic in the browser.
+      The actual paper-trading account state (balance, streaks, cool-off) lives in <code>risk_manager.py</code>
+      and is only produced by running <code>python bot.py</code> or <code>streamlit run app.py</code> locally — see
+      <a href="https://github.com/ymanda123/trading-bot/blob/main/SPEC.md">SPEC.md</a>.
+    </footer>
+  </div>
+</div>
+
+<script>
+  const root = document.documentElement;
+  const toggle = document.getElementById('theme-toggle');
+  function applyTheme(mode) {
+    if (mode) { root.setAttribute('data-theme', mode); }
+    else { root.removeAttribute('data-theme'); }
+    toggle.textContent = currentIsDark() ? 'Light mode' : 'Dark mode';
+  }
+  function currentIsDark() {
+    const attr = root.getAttribute('data-theme');
+    if (attr === 'dark') return true;
+    if (attr === 'light') return false;
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  }
+  toggle.addEventListener('click', () => applyTheme(currentIsDark() ? 'light' : 'dark'));
+  applyTheme(null);
+
+  const ATR_PERIOD = 14;
+  const LOW_VOL_THRESHOLD = 0.01;
+  const HIGH_VOL_THRESHOLD = 0.03;
+  const FAST_MA = 10;
+  const SLOW_MA = 30;
+
+  function sma(values, period) {
+    const out = new Array(values.length).fill(null);
+    for (let i = period - 1; i < values.length; i++) {
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) sum += values[j];
+      out[i] = sum / period;
+    }
+    return out;
+  }
+
+  function atr(candles, period) {
+    const trueRanges = candles.map((c, i) => {
+      if (i === 0) return c.high - c.low;
+      const prevClose = candles[i - 1].close;
+      return Math.max(c.high - c.low, Math.abs(c.high - prevClose), Math.abs(c.low - prevClose));
+    });
+    const out = new Array(candles.length).fill(null);
+    for (let i = period - 1; i < trueRanges.length; i++) {
+      let sum = 0;
+      for (let j = i - period + 1; j <= i; j++) sum += trueRanges[j];
+      out[i] = sum / period;
+    }
+    return out;
+  }
+
+  function classifyRegime(atrPct) {
+    if (atrPct >= HIGH_VOL_THRESHOLD) return 'standby';
+    if (atrPct <= LOW_VOL_THRESHOLD) return 'range';
+    return 'trend';
+  }
+
+  function setBadge(elId, kind, label, badgeClass) {
+    const el = document.getElementById(elId);
+    el.innerHTML = `<span class="badge ${badgeClass}"><span class="dot"></span>${label}</span>`;
+  }
+
+  async function load() {
+    const statusLine = document.getElementById('status-line');
+    try {
+      const resp = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=80');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const raw = await resp.json();
+      const candles = raw.map(r => ({
+        time: new Date(r[0]),
+        open: parseFloat(r[1]), high: parseFloat(r[2]), low: parseFloat(r[3]), close: parseFloat(r[4]),
+      }));
+      const closes = candles.map(c => c.close);
+      const fastMa = sma(closes, FAST_MA);
+      const slowMa = sma(closes, SLOW_MA);
+      const atrSeries = atr(candles, ATR_PERIOD);
+
+      const lastAtr = atrSeries[atrSeries.length - 1];
+      const lastClose = closes[closes.length - 1];
+      const atrPct = lastAtr / lastClose;
+      const regime = classifyRegime(atrPct);
+
+      const regimeMeta = {
+        range:   { label: 'Range-Bound', cls: 'regime-range' },
+        trend:   { label: 'Trending', cls: 'regime-trend' },
+        standby: { label: 'Standby', cls: 'regime-standby' },
+      }[regime];
+      setBadge('regime-badge', regime, regimeMeta.label, regimeMeta.cls);
+
+      let signal = 'hold', signalMeta = { label: 'Hold', cls: 'sig-hold' };
+      if (regime === 'standby') {
+        signal = 'hold';
+      } else if (regime === 'trend') {
+        const n = fastMa.length;
+        if (fastMa[n - 2] != null && slowMa[n - 2] != null) {
+          const prevDiff = fastMa[n - 2] - slowMa[n - 2];
+          const currDiff = fastMa[n - 1] - slowMa[n - 1];
+          if (prevDiff <= 0 && currDiff > 0) signal = 'buy';
+          else if (prevDiff >= 0 && currDiff < 0) signal = 'sell';
+        }
+      } else {
+        const window = closes.slice(-20);
+        const support = Math.min(...window), resistance = Math.max(...window);
+        if (lastClose <= support) signal = 'buy';
+        else if (lastClose >= resistance) signal = 'sell';
+      }
+      signalMeta = { buy: { label: 'Buy', cls: 'sig-buy' }, sell: { label: 'Sell', cls: 'sig-sell' }, hold: { label: 'Hold', cls: 'sig-hold' } }[signal];
+      setBadge('signal-badge', signal, signalMeta.label, signalMeta.cls);
+
+      const styles = getComputedStyle(document.getElementById('viz-root'));
+      const seriesFast = styles.getPropertyValue('--series-1').trim();
+      const seriesSlow = styles.getPropertyValue('--series-3').trim();
+      const textSecondary = styles.getPropertyValue('--text-secondary').trim();
+      const gridline = styles.getPropertyValue('--gridline').trim();
+      const surface = styles.getPropertyValue('--surface-1').trim();
+      const good = styles.getPropertyValue('--status-good').trim();
+      const critical = styles.getPropertyValue('--status-critical').trim();
+
+      const candleTrace = {
+        type: 'candlestick',
+        x: candles.map(c => c.time),
+        open: candles.map(c => c.open), high: candles.map(c => c.high),
+        low: candles.map(c => c.low), close: candles.map(c => c.close),
+        name: 'BTC/USDT',
+        increasing: { line: { color: good } },
+        decreasing: { line: { color: critical } },
+      };
+      const fastTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: fastMa, name: 'Fast MA (10)', line: { color: seriesFast, width: 2 } };
+      const slowTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: slowMa, name: 'Slow MA (30)', line: { color: seriesSlow, width: 2 } };
+
+      Plotly.newPlot('chart', [candleTrace, fastTrace, slowTrace], {
+        paper_bgcolor: surface, plot_bgcolor: surface,
+        font: { color: textSecondary, family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 12 },
+        margin: { t: 10, r: 10, b: 40, l: 50 },
+        xaxis: { rangeslider: { visible: false }, gridcolor: gridline, showline: false },
+        yaxis: { gridcolor: gridline, showline: false, title: 'USDT' },
+        legend: { orientation: 'h', y: 1.08 },
+      }, { displayModeBar: false, responsive: true });
+
+      const tbody = document.querySelector('#candle-table tbody');
+      tbody.innerHTML = candles.slice(-15).reverse().map(c => `
+        <tr>
+          <td>${c.time.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+          <td>${c.open.toFixed(2)}</td><td>${c.high.toFixed(2)}</td><td>${c.low.toFixed(2)}</td><td>${c.close.toFixed(2)}</td>
+        </tr>`).join('');
+
+      statusLine.textContent = `Updated ${new Date().toLocaleTimeString()} · ATR ${(atrPct * 100).toFixed(2)}% of price · ${candles.length} candles`;
+    } catch (err) {
+      statusLine.textContent = 'Could not load live Binance market data: ' + err.message;
+    }
+  }
+
+  load();
+  setInterval(load, 60000);
+</script>
+</body>
+</html>
