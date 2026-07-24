@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: trading-bot-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn server:app --worker-class gthread --workers 1 --threads 4
+    envVars:
+      - key: BINANCE_API_KEY
+        sync: false
+      - key: BINANCE_API_SECRET
+        sync: false
+      - key: CONTROL_TOKEN
+        sync: false
+      - key: ALLOWED_ORIGIN
+        value: https://ymanda123.github.io
+      - key: SYMBOL
+        value: BTC/USDT
+      - key: TIMEFRAME
+        value: 1h

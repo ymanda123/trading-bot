@@ -92,6 +92,37 @@
     cursor: pointer;
   }
 
+  #control-panel { margin-bottom: 16px; }
+  .control-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .control-left { display: flex; align-items: center; gap: 14px; }
+  .control-title { font-size: 14px; font-weight: 600; }
+  .control-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .control-sub.is-running { color: var(--status-good); }
+  .control-sub.is-cooloff { color: var(--status-warning); }
+  .control-sub.is-tripped, .control-sub.is-error { color: var(--status-critical); }
+
+  .switch { position: relative; display: inline-block; width: 44px; height: 26px; flex: none; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute; inset: 0; cursor: pointer;
+    background: var(--baseline); border-radius: 999px; transition: background .15s ease;
+  }
+  .switch .slider::before {
+    content: ""; position: absolute; height: 20px; width: 20px; left: 3px; top: 3px;
+    background: var(--surface-1); border-radius: 50%; transition: transform .15s ease;
+  }
+  .switch input:checked + .slider { background: var(--status-good); }
+  .switch input:checked + .slider::before { transform: translateX(18px); }
+  .switch input:disabled + .slider { opacity: 0.5; cursor: not-allowed; }
+
+  .control-settings { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); display: grid; gap: 10px; max-width: 420px; }
+  .control-settings label { font-size: 12px; color: var(--text-secondary); display: grid; gap: 4px; }
+  .control-settings input {
+    font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 6px;
+    border: 1px solid var(--border); background: var(--page-plane); color: var(--text-primary);
+  }
+  .control-hint { font-size: 11px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.5; }
+
   .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
   @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
   .tile {
@@ -166,6 +197,36 @@
       </div>
       <button class="theme-toggle" id="theme-toggle" type="button">Dark mode</button>
     </header>
+
+    <section id="control-panel">
+      <div class="control-row">
+        <div class="control-left">
+          <label class="switch">
+            <input type="checkbox" id="trade-toggle" disabled />
+            <span class="slider"></span>
+          </label>
+          <div>
+            <div class="control-title">Live Trading</div>
+            <div class="control-sub" id="control-status">Configure a backend to enable</div>
+          </div>
+        </div>
+        <button class="theme-toggle" id="control-settings-btn" type="button">Configure</button>
+      </div>
+      <div id="control-settings" class="control-settings" hidden>
+        <label>Backend URL
+          <input type="text" id="backend-url-input" placeholder="https://trading-bot-api.onrender.com" />
+        </label>
+        <label>Control token
+          <input type="password" id="control-token-input" placeholder="your CONTROL_TOKEN" />
+        </label>
+        <button class="theme-toggle" id="control-save-btn" type="button">Save</button>
+        <p class="control-hint">
+          Saved only in this browser (localStorage), sent only to the backend URL above.
+          Turning this on starts a paper-trading simulation against live Binance Testnet
+          prices — <code>bot.py</code> never places real exchange orders.
+        </p>
+      </div>
+    </section>
 
     <div class="tiles">
       <div class="tile">
@@ -471,6 +532,112 @@
 
   load();
   setInterval(load, 60000);
+
+  // --- Live trading control panel -------------------------------------------
+  // Talks to server.py (deployed separately, e.g. on Render) which is the
+  // only thing that actually holds API keys and runs the trade loop. This
+  // page never sees your Binance keys — only a shared control token, and
+  // only to authorize start/stop.
+  (function initControlPanel() {
+    const toggle = document.getElementById('trade-toggle');
+    const statusEl = document.getElementById('control-status');
+    const settingsBtn = document.getElementById('control-settings-btn');
+    const settingsPanel = document.getElementById('control-settings');
+    const urlInput = document.getElementById('backend-url-input');
+    const tokenInput = document.getElementById('control-token-input');
+    const saveBtn = document.getElementById('control-save-btn');
+
+    let backendUrl = localStorage.getItem('tb_backend_url') || '';
+    let controlToken = localStorage.getItem('tb_control_token') || '';
+    let pollTimer = null;
+    let applyingRemoteState = false;
+
+    urlInput.value = backendUrl;
+    tokenInput.value = controlToken;
+
+    function setStatus(text, cls) {
+      statusEl.textContent = text;
+      statusEl.className = 'control-sub' + (cls ? ' ' + cls : '');
+    }
+
+    function configured() {
+      return Boolean(backendUrl && controlToken);
+    }
+
+    function refreshEnabledState() {
+      toggle.disabled = !configured();
+      if (!configured()) setStatus('Configure a backend to enable', '');
+    }
+
+    async function pollStatus() {
+      if (!backendUrl) return;
+      try {
+        const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/status');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        applyingRemoteState = true;
+        toggle.checked = Boolean(data.running);
+        applyingRemoteState = false;
+
+        if (data.circuit_breaker_tripped) {
+          setStatus(`Circuit breaker tripped — balance $${data.balance}`, 'is-tripped');
+        } else if (data.in_cooloff) {
+          setStatus('Cool-off — paused after 3 losses', 'is-cooloff');
+        } else if (data.running) {
+          setStatus(`Running — balance $${data.balance}`, 'is-running');
+        } else {
+          setStatus('Stopped', '');
+        }
+      } catch (err) {
+        setStatus('Backend unreachable: ' + err.message, 'is-error');
+      }
+    }
+
+    function startPolling() {
+      if (pollTimer) clearInterval(pollTimer);
+      pollStatus();
+      pollTimer = setInterval(pollStatus, 10000);
+    }
+
+    settingsBtn.addEventListener('click', () => {
+      settingsPanel.hidden = !settingsPanel.hidden;
+    });
+
+    saveBtn.addEventListener('click', () => {
+      backendUrl = urlInput.value.trim();
+      controlToken = tokenInput.value.trim();
+      localStorage.setItem('tb_backend_url', backendUrl);
+      localStorage.setItem('tb_control_token', controlToken);
+      refreshEnabledState();
+      if (configured()) startPolling();
+    });
+
+    toggle.addEventListener('change', async () => {
+      if (applyingRemoteState || !configured()) return;
+      const turningOn = toggle.checked;
+      toggle.disabled = true;
+      setStatus(turningOn ? 'Starting…' : 'Stopping…', '');
+      try {
+        const resp = await fetch(backendUrl.replace(/\/+$/, '') + (turningOn ? '/start' : '/stop'), {
+          method: 'POST',
+          headers: { 'X-Control-Token': controlToken },
+        });
+        if (!resp.ok) {
+          const body = await resp.json().catch(() => ({}));
+          throw new Error(body.error || ('HTTP ' + resp.status));
+        }
+      } catch (err) {
+        toggle.checked = !turningOn; // revert on failure
+        setStatus('Failed: ' + err.message, 'is-error');
+      } finally {
+        toggle.disabled = false;
+        pollStatus();
+      }
+    });
+
+    refreshEnabledState();
+    if (configured()) startPolling();
+  })();
 </script>
 </body>
 </html>
