@@ -261,6 +261,7 @@
         <div class="ca-row"><span class="ca-label">Net P&amp;L</span><span id="ca-net-pnl">—</span></div>
         <div class="ca-row"><span class="ca-label">Last checked</span><span id="ca-last-checked">—</span></div>
         <div class="ca-row"><span class="ca-label">Regime / Signal</span><span id="ca-regime-signal">—</span></div>
+        <div class="ca-row"><span class="ca-label">AI reasoning</span><span id="ca-reason">—</span></div>
         <div class="ca-row"><span class="ca-label">Position</span><span id="ca-position">—</span></div>
         <div class="ca-row"><span class="ca-label">Trades so far</span><span id="ca-trades">—</span></div>
         <details id="ca-trade-log-details">
@@ -575,6 +576,7 @@
     const caNetPnl = document.getElementById('ca-net-pnl');
     const caLastChecked = document.getElementById('ca-last-checked');
     const caRegimeSignal = document.getElementById('ca-regime-signal');
+    const caReason = document.getElementById('ca-reason');
     const caPosition = document.getElementById('ca-position');
     const caTrades = document.getElementById('ca-trades');
     const tradeLogBody = document.querySelector('#trade-log-table tbody');
@@ -638,6 +640,7 @@
         caRegimeSignal.textContent = data.current_regime
           ? `${data.current_regime} / ${data.current_signal} @ $${data.last_price}`
           : '—';
+        caReason.textContent = data.current_reason || '—';
         caPosition.textContent = data.position
           ? `${data.position.side.toUpperCase()} ${data.position.quantity} @ $${data.position.entry_price} (stop $${data.position.stop_price})`
           : 'None open';

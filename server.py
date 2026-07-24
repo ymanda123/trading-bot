@@ -119,6 +119,7 @@ def status():
         last_price=round(bot.last_price, 2) if bot.last_price is not None else None,
         current_regime=bot.last_decision.regime.value if bot.last_decision else None,
         current_signal=bot.last_decision.signal.value if bot.last_decision else None,
+        current_reason=bot.last_decision.reason if bot.last_decision else None,
         position=position,
         trade_count=len(bot.trade_log),
         last_trade=last_trade,
