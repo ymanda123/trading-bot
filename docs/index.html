@@ -188,7 +188,7 @@
 
     <section>
       <h2>BTC/USDT — 1h</h2>
-      <p class="desc">Live public market data from Binance, with the bot's fast(10)/slow(30) moving averages overlaid.</p>
+      <p class="desc">Live public market data (Coinbase, Kraken, or Binance — whichever responds), with the bot's fast(10)/slow(30) moving averages overlaid.</p>
       <div id="chart"></div>
       <div id="status-line">Loading live market data…</div>
       <details>
@@ -327,16 +327,68 @@
     el.innerHTML = `<span class="badge ${badgeClass}"><span class="dot"></span>${label}</span>`;
   }
 
+  // Binance's public REST API geo-blocks a meaningful share of visitors
+  // ("restricted location" per its terms). Coinbase and Kraken's public
+  // market-data endpoints don't carry that restriction, so they're tried
+  // first; Binance stays as a fallback for the visitors it does work for.
+  async function fetchBinanceCandles() {
+    const resp = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=80');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const raw = await resp.json();
+    if (raw.code) throw new Error(raw.msg || 'restricted');
+    return raw.map(r => ({
+      time: new Date(r[0]),
+      open: parseFloat(r[1]), high: parseFloat(r[2]), low: parseFloat(r[3]), close: parseFloat(r[4]),
+    }));
+  }
+
+  async function fetchCoinbaseCandles() {
+    const resp = await fetch('https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=3600');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const raw = await resp.json(); // [time_s, low, high, open, close, volume], newest first
+    return raw
+      .map(r => ({ time: new Date(r[0] * 1000), low: r[1], high: r[2], open: r[3], close: r[4] }))
+      .sort((a, b) => a.time - b.time)
+      .slice(-80);
+  }
+
+  async function fetchKrakenCandles() {
+    const resp = await fetch('https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=60');
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const body = await resp.json();
+    if (body.error && body.error.length) throw new Error(body.error.join('; '));
+    const key = Object.keys(body.result).find(k => k !== 'last');
+    const rows = body.result[key]; // [time_s, open, high, low, close, vwap, volume, count]
+    return rows
+      .map(r => ({
+        time: new Date(r[0] * 1000),
+        open: parseFloat(r[1]), high: parseFloat(r[2]), low: parseFloat(r[3]), close: parseFloat(r[4]),
+      }))
+      .slice(-80);
+  }
+
+  async function fetchCandlesWithFallback() {
+    const sources = [
+      { name: 'Coinbase', fn: fetchCoinbaseCandles },
+      { name: 'Kraken', fn: fetchKrakenCandles },
+      { name: 'Binance', fn: fetchBinanceCandles },
+    ];
+    const errors = [];
+    for (const { name, fn } of sources) {
+      try {
+        const candles = await fn();
+        if (candles && candles.length) return { candles, source: name };
+      } catch (err) {
+        errors.push(`${name}: ${err.message}`);
+      }
+    }
+    throw new Error(errors.join(' | '));
+  }
+
   async function load() {
     const statusLine = document.getElementById('status-line');
     try {
-      const resp = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=80');
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const raw = await resp.json();
-      const candles = raw.map(r => ({
-        time: new Date(r[0]),
-        open: parseFloat(r[1]), high: parseFloat(r[2]), low: parseFloat(r[3]), close: parseFloat(r[4]),
-      }));
+      const { candles, source } = await fetchCandlesWithFallback();
       const closes = candles.map(c => c.close);
       const fastMa = sma(closes, FAST_MA);
       const slowMa = sma(closes, SLOW_MA);
@@ -411,9 +463,9 @@
           <td>${c.open.toFixed(2)}</td><td>${c.high.toFixed(2)}</td><td>${c.low.toFixed(2)}</td><td>${c.close.toFixed(2)}</td>
         </tr>`).join('');
 
-      statusLine.textContent = `Updated ${new Date().toLocaleTimeString()} · ATR ${(atrPct * 100).toFixed(2)}% of price · ${candles.length} candles`;
+      statusLine.textContent = `Updated ${new Date().toLocaleTimeString()} via ${source} · ATR ${(atrPct * 100).toFixed(2)}% of price · ${candles.length} candles`;
     } catch (err) {
-      statusLine.textContent = 'Could not load live Binance market data: ' + err.message;
+      statusLine.textContent = 'Could not load live market data from any source: ' + err.message;
     }
   }
 
