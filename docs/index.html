@@ -124,6 +124,12 @@
   }
   .control-hint { font-size: 11px; color: var(--text-muted); margin: 4px 0 0; line-height: 1.5; }
 
+  .control-activity { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); display: grid; gap: 6px; }
+  .control-activity[hidden] { display: none; }
+  .ca-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
+  .ca-label { color: var(--text-muted); }
+  .ca-row span:last-child { color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; }
+
   .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
   @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
   .tile {
@@ -245,6 +251,12 @@
           Turning this on starts a paper-trading simulation against live Binance Testnet
           prices — <code>bot.py</code> never places real exchange orders.
         </p>
+      </div>
+      <div id="control-activity" class="control-activity" hidden>
+        <div class="ca-row"><span class="ca-label">Last checked</span><span id="ca-last-checked">—</span></div>
+        <div class="ca-row"><span class="ca-label">Regime / Signal</span><span id="ca-regime-signal">—</span></div>
+        <div class="ca-row"><span class="ca-label">Position</span><span id="ca-position">—</span></div>
+        <div class="ca-row"><span class="ca-label">Trades so far</span><span id="ca-trades">—</span></div>
       </div>
     </section>
 
@@ -547,6 +559,11 @@
     const urlInput = document.getElementById('backend-url-input');
     const tokenInput = document.getElementById('control-token-input');
     const saveBtn = document.getElementById('control-save-btn');
+    const activityPanel = document.getElementById('control-activity');
+    const caLastChecked = document.getElementById('ca-last-checked');
+    const caRegimeSignal = document.getElementById('ca-regime-signal');
+    const caPosition = document.getElementById('ca-position');
+    const caTrades = document.getElementById('ca-trades');
 
     let backendUrl = localStorage.getItem('tb_backend_url') || '';
     let controlToken = localStorage.getItem('tb_control_token') || '';
@@ -589,8 +606,23 @@
         } else {
           setStatus('Stopped', '');
         }
+
+        activityPanel.hidden = false;
+        caLastChecked.textContent = data.last_step_at
+          ? new Date(data.last_step_at * 1000).toLocaleTimeString()
+          : (data.running ? 'Checking soon…' : 'Not started yet');
+        caRegimeSignal.textContent = data.current_regime
+          ? `${data.current_regime} / ${data.current_signal} @ $${data.last_price}`
+          : '—';
+        caPosition.textContent = data.position
+          ? `${data.position.side.toUpperCase()} ${data.position.quantity} @ $${data.position.entry_price} (stop $${data.position.stop_price})`
+          : 'None open';
+        caTrades.textContent = data.last_trade
+          ? `${data.trade_count} (last: ${data.last_trade.pnl >= 0 ? '+' : ''}$${data.last_trade.pnl})`
+          : String(data.trade_count ?? 0);
       } catch (err) {
         setStatus('Backend unreachable: ' + err.message, 'is-error');
+        activityPanel.hidden = true;
       }
     }
 

@@ -86,12 +86,28 @@ def stop():
 def status():
     with _state_lock:
         running = _running.is_set()
-        rm = _bot.risk_manager if _bot else None
+        bot = _bot
 
-    if rm is None:
+    if bot is None:
         return jsonify(running=False, balance=None)
 
+    rm = bot.risk_manager
     size_pct, atr_stop_multiple = rm.get_position_sizing()
+
+    position = None
+    if bot.position:
+        position = {
+            "side": bot.position["side"].value,
+            "entry_price": round(bot.position["entry_price"], 2),
+            "quantity": round(bot.position["quantity"], 6),
+            "stop_price": round(bot.position["stop_price"], 2),
+        }
+
+    last_trade = None
+    if rm.trade_history:
+        latest = rm.trade_history[-1]
+        last_trade = {"pnl": round(latest.pnl, 2), "timestamp": latest.timestamp}
+
     return jsonify(
         running=running,
         balance=round(rm.balance, 2),
@@ -100,6 +116,13 @@ def status():
         in_cooloff=rm.is_in_cooloff(),
         next_trade_size_pct=size_pct,
         next_trade_atr_stop_multiple=atr_stop_multiple,
+        last_step_at=bot.last_step_at,
+        last_price=round(bot.last_price, 2) if bot.last_price is not None else None,
+        current_regime=bot.last_decision.regime.value if bot.last_decision else None,
+        current_signal=bot.last_decision.signal.value if bot.last_decision else None,
+        position=position,
+        trade_count=len(rm.trade_history),
+        last_trade=last_trade,
     )
 
 

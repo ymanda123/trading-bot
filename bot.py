@@ -44,8 +44,13 @@ class TradingBot:
         self.exchange = exchange or build_exchange(config)
         self.risk_manager = risk_manager or RiskManager(config)
         self.position = None  # {"side", "entry_price", "quantity", "stop_price", "entry_friction"}
+        self.last_step_at = None
+        self.last_decision = None  # StrategyDecision from the most recent step
+        self.last_price = None
 
     def step(self) -> None:
+        self.last_step_at = time.time()
+
         if not self.risk_manager.can_trade():
             if self.risk_manager.circuit_breaker_tripped:
                 logger.warning("Circuit breaker tripped at balance $%.2f. Halting.", self.risk_manager.balance)
@@ -56,6 +61,8 @@ class TradingBot:
         df = fetch_ohlcv_df(self.exchange, self.config)
         decision = decide(df, self.config)
         price = df["close"].iloc[-1]
+        self.last_decision = decision
+        self.last_price = price
         logger.info(
             "Regime=%s Signal=%s ATR=%.4f Price=%.2f | %s",
             decision.regime.value, decision.signal.value, decision.atr, price, decision.reason,
