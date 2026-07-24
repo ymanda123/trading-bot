@@ -103,14 +103,13 @@ def status():
             "stop_price": round(bot.position["stop_price"], 2),
         }
 
-    last_trade = None
-    if rm.trade_history:
-        latest = rm.trade_history[-1]
-        last_trade = {"pnl": round(latest.pnl, 2), "timestamp": latest.timestamp}
+    recent_trades = list(reversed(bot.trade_log[-20:]))
+    last_trade = recent_trades[0] if recent_trades else None
 
     return jsonify(
         running=running,
         balance=round(rm.balance, 2),
+        net_pnl=round(rm.balance - bot.config.INITIAL_BALANCE, 2),
         consecutive_losses=rm.consecutive_losses,
         circuit_breaker_tripped=rm.circuit_breaker_tripped,
         in_cooloff=rm.is_in_cooloff(),
@@ -121,8 +120,9 @@ def status():
         current_regime=bot.last_decision.regime.value if bot.last_decision else None,
         current_signal=bot.last_decision.signal.value if bot.last_decision else None,
         position=position,
-        trade_count=len(rm.trade_history),
+        trade_count=len(bot.trade_log),
         last_trade=last_trade,
+        recent_trades=recent_trades,
     )
 
 

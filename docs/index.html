@@ -129,6 +129,11 @@
   .ca-row { display: flex; justify-content: space-between; gap: 12px; font-size: 12px; }
   .ca-label { color: var(--text-muted); }
   .ca-row span:last-child { color: var(--text-secondary); font-variant-numeric: tabular-nums; text-align: right; }
+  #ca-net-pnl.pnl-positive { color: var(--status-good); font-weight: 600; }
+  #ca-net-pnl.pnl-negative { color: var(--status-critical); font-weight: 600; }
+  .pnl-cell.pnl-positive { color: var(--status-good); }
+  .pnl-cell.pnl-negative { color: var(--status-critical); }
+  #ca-trade-log-details { margin-top: 10px; }
 
   .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
   @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
@@ -253,10 +258,17 @@
         </p>
       </div>
       <div id="control-activity" class="control-activity" hidden>
+        <div class="ca-row"><span class="ca-label">Net P&amp;L</span><span id="ca-net-pnl">—</span></div>
         <div class="ca-row"><span class="ca-label">Last checked</span><span id="ca-last-checked">—</span></div>
         <div class="ca-row"><span class="ca-label">Regime / Signal</span><span id="ca-regime-signal">—</span></div>
         <div class="ca-row"><span class="ca-label">Position</span><span id="ca-position">—</span></div>
         <div class="ca-row"><span class="ca-label">Trades so far</span><span id="ca-trades">—</span></div>
+        <details id="ca-trade-log-details">
+          <summary>Show trade log (why balance moved)</summary>
+          <table id="trade-log-table"><thead>
+            <tr><th>Closed</th><th>Regime</th><th>Side</th><th>Entry</th><th>Exit</th><th>P&amp;L</th></tr>
+          </thead><tbody></tbody></table>
+        </details>
       </div>
     </section>
 
@@ -560,10 +572,12 @@
     const tokenInput = document.getElementById('control-token-input');
     const saveBtn = document.getElementById('control-save-btn');
     const activityPanel = document.getElementById('control-activity');
+    const caNetPnl = document.getElementById('ca-net-pnl');
     const caLastChecked = document.getElementById('ca-last-checked');
     const caRegimeSignal = document.getElementById('ca-regime-signal');
     const caPosition = document.getElementById('ca-position');
     const caTrades = document.getElementById('ca-trades');
+    const tradeLogBody = document.querySelector('#trade-log-table tbody');
 
     let backendUrl = localStorage.getItem('tb_backend_url') || '';
     let controlToken = localStorage.getItem('tb_control_token') || '';
@@ -608,6 +622,16 @@
         }
 
         activityPanel.hidden = false;
+
+        if (typeof data.net_pnl === 'number') {
+          const sign = data.net_pnl > 0 ? '+' : '';
+          caNetPnl.textContent = `${sign}$${data.net_pnl.toFixed(2)}`;
+          caNetPnl.className = data.net_pnl > 0 ? 'pnl-positive' : data.net_pnl < 0 ? 'pnl-negative' : '';
+        } else {
+          caNetPnl.textContent = '—';
+          caNetPnl.className = '';
+        }
+
         caLastChecked.textContent = data.last_step_at
           ? new Date(data.last_step_at * 1000).toLocaleTimeString()
           : (data.running ? 'Checking soon…' : 'Not started yet');
@@ -617,9 +641,20 @@
         caPosition.textContent = data.position
           ? `${data.position.side.toUpperCase()} ${data.position.quantity} @ $${data.position.entry_price} (stop $${data.position.stop_price})`
           : 'None open';
-        caTrades.textContent = data.last_trade
-          ? `${data.trade_count} (last: ${data.last_trade.pnl >= 0 ? '+' : ''}$${data.last_trade.pnl})`
-          : String(data.trade_count ?? 0);
+        caTrades.textContent = String(data.trade_count ?? 0);
+
+        const trades = data.recent_trades || [];
+        tradeLogBody.innerHTML = trades.length
+          ? trades.map(t => `
+              <tr>
+                <td>${t.closed_at ? new Date(t.closed_at * 1000).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</td>
+                <td>${t.regime || '—'}</td>
+                <td>${t.side ? t.side.toUpperCase() : '—'}</td>
+                <td>$${t.entry_price}</td>
+                <td>$${t.exit_price}</td>
+                <td class="pnl-cell ${t.pnl > 0 ? 'pnl-positive' : t.pnl < 0 ? 'pnl-negative' : ''}">${t.pnl >= 0 ? '+' : ''}$${t.pnl}</td>
+              </tr>`).join('')
+          : '<tr><td colspan="6">No closed trades yet</td></tr>';
       } catch (err) {
         setStatus('Backend unreachable: ' + err.message, 'is-error');
         activityPanel.hidden = true;

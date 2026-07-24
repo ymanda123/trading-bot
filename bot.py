@@ -107,6 +107,7 @@ class TradingBot:
         self.last_step_at = None
         self.last_decision = None  # StrategyDecision from the most recent step
         self.last_price = None
+        self.trade_log = []  # closed trades: side, entry/exit price, qty, pnl, regime, timestamps
 
     def step(self) -> None:
         self.last_step_at = time.time()
@@ -146,6 +147,8 @@ class TradingBot:
             "quantity": sizing["quantity"],
             "stop_price": stop_price,
             "entry_friction": friction,
+            "regime": self.last_decision.regime.value if self.last_decision else None,
+            "opened_at": time.time(),
         }
         logger.info(
             "Opened %s position: qty=%.6f entry=%.2f stop=%.2f size=%.0f%% atr_mult=%.1fx",
@@ -173,6 +176,16 @@ class TradingBot:
         net_pnl = gross_pnl - pos["entry_friction"] - exit_friction
 
         self.risk_manager.record_trade_result(net_pnl)
+        self.trade_log.append({
+            "side": pos["side"].value,
+            "entry_price": round(pos["entry_price"], 2),
+            "exit_price": round(exit_fill, 2),
+            "quantity": round(pos["quantity"], 6),
+            "pnl": round(net_pnl, 2),
+            "regime": pos.get("regime"),
+            "opened_at": pos.get("opened_at"),
+            "closed_at": time.time(),
+        })
         logger.info(
             "Closed %s position: exit=%.2f net_pnl=%.2f balance=%.2f",
             pos["side"].value, exit_fill, net_pnl, self.risk_manager.balance,
