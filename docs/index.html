@@ -171,8 +171,13 @@
   section h2 { font-size: 15px; margin: 0 0 4px; }
   section .desc { font-size: 13px; color: var(--text-secondary); margin: 0 0 14px; }
 
-  #chart { width: 100%; height: 440px; }
+  #chart { width: 100%; height: 560px; }
   #status-line { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
+
+  .news-list { display: grid; gap: 10px; }
+  .news-item { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
+  .news-source { flex: none; width: 92px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
+  .news-title { color: var(--text-primary); }
 
   .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   @media (max-width: 720px) { .tiers { grid-template-columns: 1fr; } }
@@ -275,7 +280,7 @@
 
     <section>
       <h2>BTC/USDT — 1h</h2>
-      <p class="desc">Live public market data (Coinbase, Kraken, or Binance — whichever responds), with the bot's fast(10)/slow(30) moving averages overlaid.</p>
+      <p class="desc">Live public market data (Coinbase, Kraken, or Binance — whichever responds), with the bot's fast(10)/slow(30) moving averages, 20-bar support/resistance, and 14-period RSI overlaid.</p>
       <div id="chart"></div>
       <div id="status-line">Loading live market data…</div>
       <details>
@@ -346,6 +351,33 @@
       </div>
     </section>
 
+    <section>
+      <h2>AI Strategy Validation</h2>
+      <p class="desc">How a signal earns the right to become a live paper trade — see the "AI reasoning" row above for the current cycle's verdict.</p>
+      <div class="rules">
+        <div class="rule-card">
+          <div class="r-title">1. Propose</div>
+          <div class="r-body">An AI model reads recent price action and live headlines from CNBC, Yahoo Finance, and Bloomberg, then proposes one strategy (MA crossover, support/resistance, or RSI threshold) with parameters, plus a buy/sell/hold call.</div>
+        </div>
+        <div class="rule-card">
+          <div class="r-title">2. Backtest</div>
+          <div class="r-body">That exact strategy is replayed bar-by-bar over recent candle history, with the same trading fees and slippage as live trades, to get a trade count, win rate, and net return.</div>
+        </div>
+        <div class="rule-card">
+          <div class="r-title">3. Execute (or hold)</div>
+          <div class="r-body">The call only reaches a live paper trade if the backtest shows a positive net return across enough trades to trust it. Otherwise the bot holds — regardless of how confident the AI sounded.</div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Live News Feed</h2>
+      <p class="desc">Headlines from CNBC, Yahoo Finance, and Bloomberg — the same feed the AI reads each cycle before proposing a strategy.</p>
+      <div id="news-list" class="news-list">
+        <p class="control-hint">Configure a backend above to load live news.</p>
+      </div>
+    </section>
+
     <footer>
       This page renders live public market data and the bot's regime/strategy logic in the browser.
       The actual paper-trading account state (balance, streaks, cool-off) lives in <code>risk_manager.py</code>
@@ -377,6 +409,47 @@
   const HIGH_VOL_THRESHOLD = 0.03;
   const FAST_MA = 10;
   const SLOW_MA = 30;
+  const GRID_LOOKBACK = 20;
+  const RSI_PERIOD = 14;
+
+  function rollingMin(values, period) {
+    const out = new Array(values.length).fill(null);
+    for (let i = period - 1; i < values.length; i++) {
+      out[i] = Math.min(...values.slice(i - period + 1, i + 1));
+    }
+    return out;
+  }
+
+  function rollingMax(values, period) {
+    const out = new Array(values.length).fill(null);
+    for (let i = period - 1; i < values.length; i++) {
+      out[i] = Math.max(...values.slice(i - period + 1, i + 1));
+    }
+    return out;
+  }
+
+  // Matches backtester.py's _rsi_threshold_signals: a zero-loss window is
+  // fully overbought (100), not neutral, so uptrends can register as such.
+  function rsi(values, period) {
+    const gains = new Array(values.length).fill(0);
+    const losses = new Array(values.length).fill(0);
+    for (let i = 1; i < values.length; i++) {
+      const delta = values[i] - values[i - 1];
+      gains[i] = Math.max(delta, 0);
+      losses[i] = Math.max(-delta, 0);
+    }
+    const out = new Array(values.length).fill(null);
+    for (let i = period; i < values.length; i++) {
+      let avgGain = 0, avgLoss = 0;
+      for (let j = i - period + 1; j <= i; j++) { avgGain += gains[j]; avgLoss += losses[j]; }
+      avgGain /= period;
+      avgLoss /= period;
+      if (avgLoss === 0 && avgGain > 0) out[i] = 100;
+      else if (avgLoss === 0 && avgGain === 0) out[i] = 50;
+      else out[i] = 100 - 100 / (1 + avgGain / avgLoss);
+    }
+    return out;
+  }
 
   function sma(values, period) {
     const out = new Array(values.length).fill(null);
@@ -479,6 +552,9 @@
       const closes = candles.map(c => c.close);
       const fastMa = sma(closes, FAST_MA);
       const slowMa = sma(closes, SLOW_MA);
+      const supportSeries = rollingMin(closes, GRID_LOOKBACK);
+      const resistanceSeries = rollingMax(closes, GRID_LOOKBACK);
+      const rsiSeries = rsi(closes, RSI_PERIOD);
       const atrSeries = atr(candles, ATR_PERIOD);
 
       const lastAtr = atrSeries[atrSeries.length - 1];
@@ -521,6 +597,9 @@
       const surface = styles.getPropertyValue('--surface-1').trim();
       const good = styles.getPropertyValue('--status-good').trim();
       const critical = styles.getPropertyValue('--status-critical').trim();
+      const seq250 = styles.getPropertyValue('--seq-250').trim();
+      const seq400 = styles.getPropertyValue('--seq-400').trim();
+      const seq550 = styles.getPropertyValue('--seq-550').trim();
 
       const candleTrace = {
         type: 'candlestick',
@@ -533,13 +612,21 @@
       };
       const fastTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: fastMa, name: 'Fast MA (10)', line: { color: seriesFast, width: 2 } };
       const slowTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: slowMa, name: 'Slow MA (30)', line: { color: seriesSlow, width: 2 } };
+      const supportTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: supportSeries, name: `Support (${GRID_LOOKBACK})`, line: { color: seq250, width: 1, dash: 'dot' } };
+      const resistanceTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: resistanceSeries, name: `Resistance (${GRID_LOOKBACK})`, line: { color: seq550, width: 1, dash: 'dot' } };
+      const rsiTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: rsiSeries, name: `RSI (${RSI_PERIOD})`, line: { color: seq400, width: 2 }, yaxis: 'y2' };
 
-      Plotly.newPlot('chart', [candleTrace, fastTrace, slowTrace], {
+      Plotly.newPlot('chart', [candleTrace, fastTrace, slowTrace, supportTrace, resistanceTrace, rsiTrace], {
         paper_bgcolor: surface, plot_bgcolor: surface,
         font: { color: textSecondary, family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 12 },
         margin: { t: 10, r: 10, b: 40, l: 50 },
         xaxis: { rangeslider: { visible: false }, gridcolor: gridline, showline: false },
-        yaxis: { gridcolor: gridline, showline: false, title: 'USDT' },
+        yaxis: { domain: [0.32, 1], gridcolor: gridline, showline: false, title: 'USDT' },
+        yaxis2: { domain: [0, 0.22], gridcolor: gridline, showline: false, title: 'RSI', range: [0, 100] },
+        shapes: [
+          { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 70, y1: 70, line: { color: gridline, width: 1, dash: 'dot' } },
+          { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 30, y1: 30, line: { color: gridline, width: 1, dash: 'dot' } },
+        ],
         legend: { orientation: 'h', y: 1.08 },
       }, { displayModeBar: false, responsive: true });
 
@@ -580,11 +667,41 @@
     const caPosition = document.getElementById('ca-position');
     const caTrades = document.getElementById('ca-trades');
     const tradeLogBody = document.querySelector('#trade-log-table tbody');
+    const newsListEl = document.getElementById('news-list');
 
     let backendUrl = localStorage.getItem('tb_backend_url') || '';
     let controlToken = localStorage.getItem('tb_control_token') || '';
     let pollTimer = null;
+    let newsTimer = null;
     let applyingRemoteState = false;
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    async function pollNews() {
+      if (!backendUrl) {
+        newsListEl.innerHTML = '<p class="control-hint">Configure a backend above to load live news.</p>';
+        return;
+      }
+      try {
+        const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/news');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const items = data.items || [];
+        newsListEl.innerHTML = items.length
+          ? items.map(item => `
+              <div class="news-item">
+                <span class="news-source">${escapeHtml(item.source)}</span>
+                <span class="news-title">${escapeHtml(item.title)}</span>
+              </div>`).join('')
+          : '<p class="control-hint">No live news available right now.</p>';
+      } catch (err) {
+        newsListEl.innerHTML = `<p class="control-hint">Could not load news: ${escapeHtml(err.message)}</p>`;
+      }
+    }
 
     urlInput.value = backendUrl;
     tokenInput.value = controlToken;
@@ -666,8 +783,11 @@
 
     function startPolling() {
       if (pollTimer) clearInterval(pollTimer);
+      if (newsTimer) clearInterval(newsTimer);
       pollStatus();
+      pollNews();
       pollTimer = setInterval(pollStatus, 10000);
+      newsTimer = setInterval(pollNews, 60000);
     }
 
     settingsBtn.addEventListener('click', () => {

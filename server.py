@@ -20,6 +20,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from bot import TradingBot
+from news_feed import fetch_news
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("trading-bot-server")
@@ -125,6 +126,27 @@ def status():
         last_trade=last_trade,
         recent_trades=recent_trades,
     )
+
+
+@app.get("/news")
+def news():
+    """Read-only, unauthenticated -- same live headlines (CNBC, Yahoo
+    Finance, Bloomberg) that ai_strategy.py feeds to the AI each cycle, so
+    the dashboard can show what the AI is actually reading."""
+    try:
+        items = fetch_news()
+    except Exception:
+        logger.exception("News fetch failed")
+        items = []
+
+    return jsonify(items=[
+        {
+            "source": item["source"],
+            "title": item["title"],
+            "published_at": item["published_at"].isoformat(),
+        }
+        for item in items
+    ])
 
 
 if __name__ == "__main__":
