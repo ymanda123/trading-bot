@@ -372,9 +372,9 @@
 
     <section>
       <h2>Live News Feed</h2>
-      <p class="desc">Headlines from CNBC, Yahoo Finance, and Bloomberg — the same feed the AI reads each cycle before proposing a strategy.</p>
+      <p class="desc">Headlines from CNBC, Yahoo Finance, and Bloomberg — the same sources the AI reads each cycle before proposing a strategy.</p>
       <div id="news-list" class="news-list">
-        <p class="control-hint">Configure a backend above to load live news.</p>
+        <p class="control-hint">Loading live news…</p>
       </div>
     </section>
 
@@ -646,6 +646,83 @@
   load();
   setInterval(load, 60000);
 
+  // --- Live news feed ----------------------------------------------------------
+  // Tries the configured backend first (server.py's /news — the exact feed
+  // the AI reads each cycle). Falls back to fetching CNBC/Yahoo
+  // Finance/Bloomberg RSS directly in the browser via rss2json.com (a free
+  // CORS proxy), since none of those three feeds sends
+  // Access-Control-Allow-Origin itself, so this works with zero setup.
+  const NEWS_FEEDS = [
+    { source: 'CNBC', url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html', filterKeywords: true },
+    { source: 'Yahoo Finance', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=BTC-USD&region=US&lang=en-US', filterKeywords: false },
+    { source: 'Bloomberg', url: 'https://www.bloomberg.com/feeds/crypto/news.rss', filterKeywords: false },
+  ];
+  const CRYPTO_KEYWORDS = ['bitcoin', 'crypto', 'btc', 'ethereum', 'blockchain', 'stablecoin'];
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function mentionsCrypto(text) {
+    const lowered = text.toLowerCase();
+    return CRYPTO_KEYWORDS.some(k => lowered.includes(k));
+  }
+
+  async function fetchFeedViaProxy(feed) {
+    const proxyUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feed.url);
+    const resp = await fetch(proxyUrl);
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+    const data = await resp.json();
+    if (data.status !== 'ok') throw new Error(data.message || 'proxy error');
+    return (data.items || [])
+      .filter(item => !feed.filterKeywords || mentionsCrypto((item.title || '') + ' ' + (item.description || '')))
+      .map(item => ({ source: feed.source, title: item.title, publishedAt: new Date(item.pubDate) }));
+  }
+
+  async function fetchNewsClientSide() {
+    const results = await Promise.allSettled(NEWS_FEEDS.map(fetchFeedViaProxy));
+    const items = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+    items.sort((a, b) => b.publishedAt - a.publishedAt);
+    return items.slice(0, 8);
+  }
+
+  function renderNews(items) {
+    const el = document.getElementById('news-list');
+    el.innerHTML = items.length
+      ? items.map(item => `
+          <div class="news-item">
+            <span class="news-source">${escapeHtml(item.source)}</span>
+            <span class="news-title">${escapeHtml(item.title)}</span>
+          </div>`).join('')
+      : '<p class="control-hint">No live news available right now.</p>';
+  }
+
+  async function refreshNews() {
+    const backendUrl = localStorage.getItem('tb_backend_url') || '';
+    if (backendUrl) {
+      try {
+        const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/news');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        renderNews((data.items || []).map(item => ({ source: item.source, title: item.title })));
+        return;
+      } catch (err) {
+        // backend unreachable or not deployed yet -- fall through below
+      }
+    }
+    try {
+      renderNews(await fetchNewsClientSide());
+    } catch (err) {
+      document.getElementById('news-list').innerHTML =
+        `<p class="control-hint">Could not load news: ${escapeHtml(err.message)}</p>`;
+    }
+  }
+
+  refreshNews();
+  setInterval(refreshNews, 60000);
+
   // --- Live trading control panel -------------------------------------------
   // Talks to server.py (deployed separately, e.g. on Render) which is the
   // only thing that actually holds API keys and runs the trade loop. This
@@ -667,41 +744,11 @@
     const caPosition = document.getElementById('ca-position');
     const caTrades = document.getElementById('ca-trades');
     const tradeLogBody = document.querySelector('#trade-log-table tbody');
-    const newsListEl = document.getElementById('news-list');
 
     let backendUrl = localStorage.getItem('tb_backend_url') || '';
     let controlToken = localStorage.getItem('tb_control_token') || '';
     let pollTimer = null;
-    let newsTimer = null;
     let applyingRemoteState = false;
-
-    function escapeHtml(str) {
-      const div = document.createElement('div');
-      div.textContent = str;
-      return div.innerHTML;
-    }
-
-    async function pollNews() {
-      if (!backendUrl) {
-        newsListEl.innerHTML = '<p class="control-hint">Configure a backend above to load live news.</p>';
-        return;
-      }
-      try {
-        const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/news');
-        if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        const data = await resp.json();
-        const items = data.items || [];
-        newsListEl.innerHTML = items.length
-          ? items.map(item => `
-              <div class="news-item">
-                <span class="news-source">${escapeHtml(item.source)}</span>
-                <span class="news-title">${escapeHtml(item.title)}</span>
-              </div>`).join('')
-          : '<p class="control-hint">No live news available right now.</p>';
-      } catch (err) {
-        newsListEl.innerHTML = `<p class="control-hint">Could not load news: ${escapeHtml(err.message)}</p>`;
-      }
-    }
 
     urlInput.value = backendUrl;
     tokenInput.value = controlToken;
@@ -783,11 +830,8 @@
 
     function startPolling() {
       if (pollTimer) clearInterval(pollTimer);
-      if (newsTimer) clearInterval(newsTimer);
       pollStatus();
-      pollNews();
       pollTimer = setInterval(pollStatus, 10000);
-      newsTimer = setInterval(pollNews, 60000);
     }
 
     settingsBtn.addEventListener('click', () => {
