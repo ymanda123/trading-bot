@@ -9,10 +9,36 @@ Regime-switching crypto trading bot on **Binance Testnet** (paper trading) via
 |---|---|
 | `config.py` | All tunable constants and env-driven settings |
 | `risk_manager.py` | Circuit breaker, position sizing, cool-off, friction |
-| `strategy.py` | ATR regime classification + per-regime signal logic |
+| `strategy.py` | ATR regime classification + per-regime signal logic (used directly for the high-vol standby override) |
+| `ai_strategy.py` | AI-driven strategy proposal (Groq LLM + live news + candles) gated by a backtest before it can trade |
+| `news_feed.py` | Live news headlines from CNBC, Yahoo Finance, and Bloomberg RSS feeds, fed into the AI prompt |
+| `backtester.py` | Strategy templates (MA crossover, support/resistance, RSI) and the trade simulation used to gate `ai_strategy.py` |
 | `bot.py` | CCXT integration and the live trade loop |
 | `app.py` | Streamlit + Plotly dashboard |
 | `test_risk_manager.py` | Pytest coverage for every risk rule below |
+| `test_backtester.py` | Pytest coverage for the strategy templates and the backtest pass/fail gate |
+
+## AI Strategy Validation
+
+Each cycle (when not in the high-vol standby regime), `ai_strategy.py` pulls
+live Bitcoin/crypto headlines from CNBC, Yahoo Finance, and Bloomberg
+(`news_feed.py`), hands them to Groq's free-tier LLM API alongside recent
+candles, and asks it to propose one strategy template with parameters plus
+a buy/sell/hold call:
+
+| Template | Parameters |
+|---|---|
+| `ma_crossover` | `fast_period` (5-20), `slow_period` (20-50) |
+| `support_resistance` | `lookback` (10-40) |
+| `rsi_threshold` | `period` (7-21), `oversold` (20-35), `overbought` (65-80) |
+
+That exact strategy is then replayed bar-by-bar over the last
+`AI_HISTORY_CANDLES` (150) candles, applying the same taker fee + slippage
+as live fills, one position at a time. The proposed signal is only allowed
+through to a live paper trade if the backtest shows `trades >=
+BACKTEST_MIN_TRADES` (3) and a positive net return — otherwise the bot
+holds regardless of what the AI proposed. The high-volatility standby rule
+still overrides everything: no new entries during a volatility spike.
 
 ## Regime Classification (14-period ATR)
 

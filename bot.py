@@ -84,7 +84,7 @@ def _fetch_ohlcv_kraken(config, limit: int) -> pd.DataFrame:
 
 
 def fetch_ohlcv_df(exchange: ccxt.Exchange, config=Config) -> pd.DataFrame:
-    limit = max(config.SLOW_MA_PERIOD, config.ATR_PERIOD) + 5
+    limit = max(config.SLOW_MA_PERIOD, config.ATR_PERIOD, config.AI_HISTORY_CANDLES) + 5
     try:
         raw = exchange.fetch_ohlcv(config.SYMBOL, timeframe=config.TIMEFRAME, limit=limit)
         df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])

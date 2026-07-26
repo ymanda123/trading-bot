@@ -55,3 +55,7 @@ class Config:
     # --- Friction ------------------------------------------------------------
     TAKER_FEE_PCT = 0.00075  # 0.075%
     SLIPPAGE_PCT = 0.0005    # 0.05%
+
+    # --- AI strategy proposal + backtest gate ---------------------------------
+    AI_HISTORY_CANDLES = 150  # bars of history given to the AI and used to backtest its proposed strategy
+    BACKTEST_MIN_TRADES = 3   # minimum trades in the backtest window before a strategy's edge is trusted
