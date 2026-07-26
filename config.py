@@ -21,6 +21,21 @@ class Config:
     SYMBOL = os.getenv("SYMBOL", "BTC/USDT")
     TIMEFRAME = os.getenv("TIMEFRAME", "1h")
 
+    # --- Tradable assets (fixed set, selectable via server.py's /start) --------
+    # "crypto" symbols route through the ccxt/Binance -> Coinbase -> Kraken
+    # chain in bot.py; "stock" and "commodity" symbols have no exchange
+    # account behind them at all, so they route through Yahoo Finance's
+    # public chart API instead (see bot._fetch_ohlcv_yahoo). Either way this
+    # stays paper-trading only -- nothing here ever places a real order.
+    SUPPORTED_ASSETS = {
+        "BTC/USDT": {"label": "Bitcoin (BTC/USDT)", "kind": "crypto", "yahoo_symbol": "BTC-USD"},
+        "ETH/USDT": {"label": "Ethereum (ETH/USDT)", "kind": "crypto", "yahoo_symbol": "ETH-USD"},
+        "XAU/USD": {"label": "Gold futures (XAU/USD)", "kind": "commodity", "yahoo_symbol": "GC=F"},
+        "WTI/USD": {"label": "Crude oil futures (WTI)", "kind": "commodity", "yahoo_symbol": "CL=F"},
+        "AAPL": {"label": "Apple (AAPL)", "kind": "stock", "yahoo_symbol": "AAPL"},
+        "TSLA": {"label": "Tesla (TSLA)", "kind": "stock", "yahoo_symbol": "TSLA"},
+    }
+
     # --- Capital & circuit breaker ------------------------------------------
     INITIAL_BALANCE = 200.0
     CIRCUIT_BREAKER_DRAWDOWN_PCT = 0.20

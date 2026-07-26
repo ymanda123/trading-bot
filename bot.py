@@ -1,7 +1,8 @@
-"""Main bot loop: pulls OHLCV from Binance Testnet via CCXT, classifies the
-market regime, generates a signal, and manages a single paper position
-subject to RiskManager guardrails (circuit breaker, sizing, cool-off,
-friction).
+"""Main bot loop: pulls OHLCV for the currently selected asset (crypto via
+CCXT/Binance Testnet, or stocks/commodities via Yahoo Finance -- see
+config.SUPPORTED_ASSETS), classifies the market regime, generates a signal,
+and manages a single paper position subject to RiskManager guardrails
+(circuit breaker, sizing, cool-off, friction).
 """
 
 import logging
@@ -83,8 +84,46 @@ def _fetch_ohlcv_kraken(config, limit: int) -> pd.DataFrame:
     return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
 
+def _fetch_ohlcv_yahoo(yahoo_symbol: str, config, limit: int) -> pd.DataFrame:
+    """Stocks and commodities have no exchange account behind them here --
+    there's nothing like ccxt/Binance Testnet for equities or futures in this
+    project -- so those symbols go through Yahoo Finance's public chart API
+    instead. Still paper-trading only: this is a read-only price feed, no
+    order-placement capability exists for these assets at all."""
+    resp = requests.get(
+        f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}",
+        params={"interval": config.TIMEFRAME, "range": "60d"},
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=10,
+    )
+    resp.raise_for_status()
+    body = resp.json()
+    result = body.get("chart", {}).get("result")
+    if not result:
+        error = body.get("chart", {}).get("error")
+        raise RuntimeError(f"Yahoo Finance error for {yahoo_symbol}: {error}")
+
+    r = result[0]
+    quote = r["indicators"]["quote"][0]
+    df = pd.DataFrame({
+        "timestamp": r["timestamp"],
+        "open": quote["open"],
+        "high": quote["high"],
+        "low": quote["low"],
+        "close": quote["close"],
+        "volume": quote["volume"],
+    }).dropna()  # market-closed gaps (weekends/after-hours) come back as nulls
+    df["timestamp"] = pd.to_datetime(df["timestamp"], unit="s")
+    return df.tail(limit).reset_index(drop=True)
+
+
 def fetch_ohlcv_df(exchange: ccxt.Exchange, config=Config) -> pd.DataFrame:
     limit = max(config.SLOW_MA_PERIOD, config.ATR_PERIOD, config.AI_HISTORY_CANDLES) + 5
+    asset = config.SUPPORTED_ASSETS.get(config.SYMBOL)
+
+    if asset and asset["kind"] != "crypto":
+        return _fetch_ohlcv_yahoo(asset["yahoo_symbol"], config, limit)
+
     try:
         raw = exchange.fetch_ohlcv(config.SYMBOL, timeframe=config.TIMEFRAME, limit=limit)
         df = pd.DataFrame(raw, columns=["timestamp", "open", "high", "low", "close", "volume"])

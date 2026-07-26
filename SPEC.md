@@ -1,7 +1,24 @@
 # Trading Bot Spec
 
-Regime-switching crypto trading bot on **Binance Testnet** (paper trading) via
-**CCXT**. Not financial advice; testnet only.
+Regime-switching paper-trading bot. Not financial advice; nothing here ever
+places a real order on any exchange or broker, for any asset.
+
+## Tradable Assets
+
+A fixed set, selectable via `server.py`'s `POST /start {"symbol": "..."}` or
+the dashboard's asset dropdown (`Config.SUPPORTED_ASSETS`):
+
+| Symbol | Kind | Price source |
+|---|---|---|
+| `BTC/USDT`, `ETH/USDT` | crypto | CCXT/Binance Testnet, falling back to Coinbase then Kraken |
+| `XAU/USD` (gold), `WTI/USD` (oil) | commodity | Yahoo Finance chart API |
+| `AAPL`, `TSLA` | stock | Yahoo Finance chart API |
+
+Switching assets always starts a fresh bot instance (balance/streaks reset)
+since carrying state across markets wouldn't mean anything. Stocks and
+commodities don't trade 24/7 like crypto; when the market's closed or a
+fetch fails, the bot just holds that cycle — the same fail-safe pattern
+already used for AI errors, no separate market-hours logic.
 
 ## Files
 
@@ -13,7 +30,7 @@ Regime-switching crypto trading bot on **Binance Testnet** (paper trading) via
 | `ai_strategy.py` | AI-driven strategy proposal (Groq LLM + live news + candles) gated by a backtest before it can trade |
 | `news_feed.py` | Live news headlines from CNBC, Yahoo Finance, and Bloomberg RSS feeds, fed into the AI prompt |
 | `backtester.py` | Strategy templates (MA crossover, support/resistance, RSI) and the trade simulation used to gate `ai_strategy.py` |
-| `bot.py` | CCXT integration and the live trade loop |
+| `bot.py` | Price-fetch (CCXT for crypto, Yahoo Finance for stocks/commodities) and the live trade loop |
 | `app.py` | Streamlit + Plotly dashboard |
 | `test_risk_manager.py` | Pytest coverage for every risk rule below |
 | `test_backtester.py` | Pytest coverage for the strategy templates and the backtest pass/fail gate |

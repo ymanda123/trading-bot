@@ -1,14 +1,20 @@
-"""Control-plane API for the trading bot: exposes /start, /stop, and
-/status so the public dashboard can toggle the live trade loop on and off.
+"""Control-plane API for the trading bot: exposes /start, /stop, /status,
+/assets, and /news so the public dashboard can pick an asset, toggle the
+live trade loop on and off, and see what it's doing.
 
 Runs the bot loop on a background thread inside this process. Note that
-bot.py's TradingBot only *simulates* fills against live testnet prices —
-it never calls exchange.create_order — so /start does not place real
-exchange orders; it starts an in-memory paper-trading loop.
+bot.py's TradingBot only *simulates* fills against live prices -- it never
+calls exchange.create_order -- so /start does not place real orders on any
+exchange or broker; it starts an in-memory paper-trading loop. /start
+optionally takes a JSON body {"symbol": "AAPL"} to pick which of
+Config.SUPPORTED_ASSETS to trade; switching symbols always starts a fresh
+bot (balance/streaks reset) since carrying state across markets wouldn't
+mean anything.
 
 /start and /stop require a shared control token (CONTROL_TOKEN env var)
 sent via the X-Control-Token header, so a stranger with the dashboard URL
-can't flip the switch. /status is read-only and unauthenticated.
+can't flip the switch. /status, /assets, and /news are read-only and
+unauthenticated.
 """
 
 import logging
@@ -20,6 +26,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from bot import TradingBot
+from config import Config
 from news_feed import fetch_news
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -62,15 +69,28 @@ def start():
         return jsonify(error="unauthorized"), 401
 
     global _bot, _loop_thread
+    body = request.get_json(silent=True) or {}
+    requested_symbol = body.get("symbol")
+
     with _state_lock:
         if _running.is_set():
             return jsonify(status="already_running")
-        if _bot is None:
+
+        if requested_symbol:
+            if requested_symbol not in Config.SUPPORTED_ASSETS:
+                return jsonify(error=f"unknown symbol {requested_symbol!r}"), 400
+            if _bot is None or _bot.config.SYMBOL != requested_symbol:
+                # Switching assets starts a fresh bot -- balance/streaks from
+                # one market shouldn't carry over to a different one.
+                Config.SYMBOL = requested_symbol
+                _bot = TradingBot()
+        elif _bot is None:
             _bot = TradingBot()
+
         _running.set()
         _loop_thread = threading.Thread(target=_run_loop, daemon=True)
         _loop_thread.start()
-    return jsonify(status="started")
+    return jsonify(status="started", symbol=_bot.config.SYMBOL)
 
 
 @app.post("/stop")
@@ -90,7 +110,7 @@ def status():
         bot = _bot
 
     if bot is None:
-        return jsonify(running=False, balance=None)
+        return jsonify(running=False, balance=None, symbol=Config.SYMBOL)
 
     rm = bot.risk_manager
     size_pct, atr_stop_multiple = rm.get_position_sizing()
@@ -109,6 +129,7 @@ def status():
 
     return jsonify(
         running=running,
+        symbol=bot.config.SYMBOL,
         balance=round(rm.balance, 2),
         net_pnl=round(rm.balance - bot.config.INITIAL_BALANCE, 2),
         consecutive_losses=rm.consecutive_losses,
@@ -126,6 +147,17 @@ def status():
         last_trade=last_trade,
         recent_trades=recent_trades,
     )
+
+
+@app.get("/assets")
+def assets():
+    """Read-only, unauthenticated -- the fixed set of symbols the dashboard's
+    asset selector can offer, sourced from Config.SUPPORTED_ASSETS so it's
+    never out of sync with what /start will actually accept."""
+    return jsonify(assets=[
+        {"symbol": symbol, "label": info["label"], "kind": info["kind"]}
+        for symbol, info in Config.SUPPORTED_ASSETS.items()
+    ])
 
 
 @app.get("/news")

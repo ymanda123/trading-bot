@@ -92,6 +92,18 @@
     cursor: pointer;
   }
 
+  .asset-select {
+    border: 1px solid var(--border);
+    background: var(--surface-1);
+    color: var(--text-secondary);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .asset-select:disabled { opacity: 0.5; cursor: not-allowed; }
+
   #control-panel { margin-bottom: 16px; }
   .control-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
   .control-left { display: flex; align-items: center; gap: 14px; }
@@ -246,7 +258,12 @@
             <div class="control-sub" id="control-status">Configure a backend to enable</div>
           </div>
         </div>
-        <button class="theme-toggle" id="control-settings-btn" type="button">Configure</button>
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <select id="asset-select" class="asset-select" disabled>
+            <option value="BTC/USDT">Bitcoin (BTC/USDT)</option>
+          </select>
+          <button class="theme-toggle" id="control-settings-btn" type="button">Configure</button>
+        </div>
       </div>
       <div id="control-settings" class="control-settings" hidden>
         <label>Backend URL
@@ -258,8 +275,9 @@
         <button class="theme-toggle" id="control-save-btn" type="button">Save</button>
         <p class="control-hint">
           Saved only in this browser (localStorage), sent only to the backend URL above.
-          Turning this on starts a paper-trading simulation against live Binance Testnet
-          prices — <code>bot.py</code> never places real exchange orders.
+          Pick an asset on the right, then turn this on to start a paper-trading
+          simulation against live prices — <code>bot.py</code> never places real
+          orders on any exchange or broker, for any asset.
         </p>
       </div>
       <div id="control-activity" class="control-activity" hidden>
@@ -744,11 +762,13 @@
     const caPosition = document.getElementById('ca-position');
     const caTrades = document.getElementById('ca-trades');
     const tradeLogBody = document.querySelector('#trade-log-table tbody');
+    const assetSelect = document.getElementById('asset-select');
 
     let backendUrl = localStorage.getItem('tb_backend_url') || '';
     let controlToken = localStorage.getItem('tb_control_token') || '';
     let pollTimer = null;
     let applyingRemoteState = false;
+    let botIsRunning = false;
 
     urlInput.value = backendUrl;
     tokenInput.value = controlToken;
@@ -764,7 +784,28 @@
 
     function refreshEnabledState() {
       toggle.disabled = !configured();
+      assetSelect.disabled = !configured() || botIsRunning;
       if (!configured()) setStatus('Configure a backend to enable', '');
+    }
+
+    async function loadAssets() {
+      if (!backendUrl) return;
+      try {
+        const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/assets');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const assetsList = data.assets || [];
+        if (!assetsList.length) return;
+        const previousValue = assetSelect.value;
+        assetSelect.innerHTML = assetsList
+          .map(a => `<option value="${escapeHtml(a.symbol)}">${escapeHtml(a.label)}</option>`)
+          .join('');
+        if (assetsList.some(a => a.symbol === previousValue)) {
+          assetSelect.value = previousValue;
+        }
+      } catch (err) {
+        // keep whatever options are already there (default BTC/USDT) on failure
+      }
     }
 
     async function pollStatus() {
@@ -776,6 +817,12 @@
         applyingRemoteState = true;
         toggle.checked = Boolean(data.running);
         applyingRemoteState = false;
+
+        botIsRunning = Boolean(data.running);
+        assetSelect.disabled = !configured() || botIsRunning;
+        if (data.symbol && [...assetSelect.options].some(o => o.value === data.symbol)) {
+          assetSelect.value = data.symbol;
+        }
 
         if (data.circuit_breaker_tripped) {
           setStatus(`Circuit breaker tripped — balance $${data.balance}`, 'is-tripped');
@@ -802,7 +849,7 @@
           ? new Date(data.last_step_at * 1000).toLocaleTimeString()
           : (data.running ? 'Checking soon…' : 'Not started yet');
         caRegimeSignal.textContent = data.current_regime
-          ? `${data.current_regime} / ${data.current_signal} @ $${data.last_price}`
+          ? `${data.symbol ? data.symbol + ': ' : ''}${data.current_regime} / ${data.current_signal} @ $${data.last_price}`
           : '—';
         caReason.textContent = data.current_reason || '—';
         caPosition.textContent = data.position
@@ -844,7 +891,7 @@
       localStorage.setItem('tb_backend_url', backendUrl);
       localStorage.setItem('tb_control_token', controlToken);
       refreshEnabledState();
-      if (configured()) startPolling();
+      if (configured()) { loadAssets(); startPolling(); }
     });
 
     toggle.addEventListener('change', async () => {
@@ -855,7 +902,11 @@
       try {
         const resp = await fetch(backendUrl.replace(/\/+$/, '') + (turningOn ? '/start' : '/stop'), {
           method: 'POST',
-          headers: { 'X-Control-Token': controlToken },
+          headers: {
+            'X-Control-Token': controlToken,
+            ...(turningOn ? { 'Content-Type': 'application/json' } : {}),
+          },
+          ...(turningOn ? { body: JSON.stringify({ symbol: assetSelect.value }) } : {}),
         });
         if (!resp.ok) {
           const body = await resp.json().catch(() => ({}));
@@ -871,7 +922,7 @@
     });
 
     refreshEnabledState();
-    if (configured()) startPolling();
+    if (configured()) { loadAssets(); startPolling(); }
   })();
 </script>
 </body>
