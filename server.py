@@ -163,8 +163,10 @@ def assets():
 @app.get("/news")
 def news():
     """Read-only, unauthenticated -- same live headlines (CNBC, Yahoo
-    Finance, Bloomberg) that ai_strategy.py feeds to the AI each cycle, so
-    the dashboard can show what the AI is actually reading."""
+    Finance, Bloomberg, WSJ, NYT, Financial Times) that ai_strategy.py feeds
+    to the AI each cycle, so the dashboard can show what the AI is actually
+    reading. Each item's "link" points at the full article on the source's
+    own site -- the dashboard opens it there rather than reproducing it."""
     try:
         items = fetch_news()
     except Exception:
@@ -175,6 +177,7 @@ def news():
         {
             "source": item["source"],
             "title": item["title"],
+            "link": item.get("link", ""),
             "published_at": item["published_at"].isoformat(),
         }
         for item in items

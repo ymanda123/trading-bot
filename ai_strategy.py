@@ -2,8 +2,9 @@
 trending / range-bound regimes with a two-step AI + validation pipeline:
 
   1. An LLM (Groq's free-tier API) looks at recent price action AND live
-     headlines pulled from CNBC, Yahoo Finance, and Bloomberg (news_feed.py),
-     then proposes ONE strategy (from a small backtestable template set)
+     headlines pulled from CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and
+     the Financial Times (news_feed.py), then proposes ONE strategy (from a
+     small backtestable template set)
      plus the buy/sell/hold call that strategy makes right now.
   2. That exact strategy is replayed against recent candle history
      (backtester.run_backtest) before it's trusted. Only a strategy that
@@ -87,7 +88,7 @@ def propose_strategy(df, regime, atr, config=Config) -> dict:
         f"14-period ATR: {atr:.2f} ({atr / price * 100:.2f}% of price)\n"
         f"Detected volatility regime: {regime.value}\n\n"
         f"Last {min(30, len(df))} candles (oldest to newest):\n{_format_candles(df)}\n\n"
-        f"Recent financial/crypto news headlines (CNBC, Yahoo Finance, Bloomberg):\n{news_block}\n\n"
+        f"Recent financial/crypto news headlines (CNBC, Yahoo Finance, Bloomberg, WSJ, NYT, Financial Times):\n{news_block}\n\n"
         "This is a paper-trading simulation — no real money or real orders "
         "move on your call. Considering both the price action above and the "
         "news headlines, propose ONE trading strategy from this exact set, "

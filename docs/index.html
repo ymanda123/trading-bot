@@ -186,10 +186,28 @@
   #chart { width: 100%; height: 560px; }
   #status-line { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
 
+  .news-filters { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .news-filter-btn {
+    border: 1px solid var(--border);
+    background: var(--page-plane);
+    color: var(--text-secondary);
+    border-radius: 999px;
+    padding: 4px 12px;
+    font-size: 12px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .news-filter-btn.active { background: var(--series-1); border-color: var(--series-1); color: #fff; }
+
   .news-list { display: grid; gap: 10px; }
   .news-item { display: flex; gap: 10px; align-items: baseline; font-size: 13px; }
   .news-source { flex: none; width: 92px; font-size: 11px; font-weight: 600; color: var(--text-muted); }
-  .news-title { color: var(--text-primary); }
+  .news-title { color: var(--text-primary); text-decoration: none; }
+  .news-title:hover { text-decoration: underline; }
+
+  .video-select-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .video-frame-wrap { position: relative; width: 100%; padding-top: 56.25%; border-radius: 8px; overflow: hidden; background: #000; }
+  .video-frame-wrap iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
 
   .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   @media (max-width: 720px) { .tiers { grid-template-columns: 1fr; } }
@@ -375,7 +393,7 @@
       <div class="rules">
         <div class="rule-card">
           <div class="r-title">1. Propose</div>
-          <div class="r-body">An AI model reads recent price action and live headlines from CNBC, Yahoo Finance, and Bloomberg, then proposes one strategy (MA crossover, support/resistance, or RSI threshold) with parameters, plus a buy/sell/hold call.</div>
+          <div class="r-body">An AI model reads recent price action and live headlines from CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and the Financial Times, then proposes one strategy (MA crossover, support/resistance, or RSI threshold) with parameters, plus a buy/sell/hold call.</div>
         </div>
         <div class="rule-card">
           <div class="r-title">2. Backtest</div>
@@ -389,8 +407,29 @@
     </section>
 
     <section>
+      <h2>Live Market TV</h2>
+      <p class="desc">
+        Each network's own free 24/7 live stream, embedded via YouTube's official player — nothing here is
+        scraped or re-hosted. CNBC's live TV feed is subscriber-only (CNBC+), so it isn't offered as video below;
+        its headlines are still in the news feed underneath.
+      </p>
+      <div class="video-select-row">
+        <select id="video-select" class="asset-select">
+          <option value="UCIALMKvObZNtJ6AmdCLP7Lg">Bloomberg Television</option>
+          <option value="UCEAZeUIeJs0IjQiqTCdVSIg">Yahoo Finance</option>
+        </select>
+      </div>
+      <div class="video-frame-wrap">
+        <iframe id="video-frame" src="https://www.youtube.com/embed/live_stream?channel=UCIALMKvObZNtJ6AmdCLP7Lg&autoplay=0"
+          title="Live market TV" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+      </div>
+      <p class="control-hint">If a network isn't live right now, YouTube shows its most recent broadcast instead.</p>
+    </section>
+
+    <section>
       <h2>Live News Feed</h2>
-      <p class="desc">Headlines from CNBC, Yahoo Finance, and Bloomberg — the same sources the AI reads each cycle before proposing a strategy.</p>
+      <p class="desc">Headlines from CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and the Financial Times — the same sources the AI reads each cycle before proposing a strategy. Click a headline to read the full article on the source's own site.</p>
+      <div id="news-filters" class="news-filters"></div>
       <div id="news-list" class="news-list">
         <p class="control-hint">Loading live news…</p>
       </div>
@@ -666,16 +705,23 @@
 
   // --- Live news feed ----------------------------------------------------------
   // Tries the configured backend first (server.py's /news — the exact feed
-  // the AI reads each cycle). Falls back to fetching CNBC/Yahoo
-  // Finance/Bloomberg RSS directly in the browser via rss2json.com (a free
-  // CORS proxy), since none of those three feeds sends
-  // Access-Control-Allow-Origin itself, so this works with zero setup.
+  // the AI reads each cycle). Falls back to fetching each source's RSS
+  // directly in the browser via rss2json.com (a free CORS proxy), since
+  // none of these feeds send Access-Control-Allow-Origin themselves, so
+  // this works with zero setup. Every item keeps a "link" back to the full
+  // article on the source's own site -- headlines only, never republished
+  // article text, so WSJ/NYT/FT paywalls are respected.
   const NEWS_FEEDS = [
     { source: 'CNBC', url: 'https://www.cnbc.com/id/10000664/device/rss/rss.html', filterKeywords: true },
     { source: 'Yahoo Finance', url: 'https://feeds.finance.yahoo.com/rss/2.0/headline?s=BTC-USD&region=US&lang=en-US', filterKeywords: false },
     { source: 'Bloomberg', url: 'https://www.bloomberg.com/feeds/crypto/news.rss', filterKeywords: false },
+    { source: 'WSJ', url: 'https://feeds.a.dj.com/rss/RSSMarketsMain.xml', filterKeywords: false },
+    { source: 'NYT', url: 'https://rss.nytimes.com/services/xml/rss/nyt/Business.xml', filterKeywords: false },
+    { source: 'Financial Times', url: 'https://www.ft.com/rss/home/international', filterKeywords: false },
   ];
   const CRYPTO_KEYWORDS = ['bitcoin', 'crypto', 'btc', 'ethereum', 'blockchain', 'stablecoin'];
+  let newsSourceFilter = 'All';
+  let lastNewsItems = [];
 
   function escapeHtml(str) {
     const div = document.createElement('div');
@@ -696,23 +742,43 @@
     if (data.status !== 'ok') throw new Error(data.message || 'proxy error');
     return (data.items || [])
       .filter(item => !feed.filterKeywords || mentionsCrypto((item.title || '') + ' ' + (item.description || '')))
-      .map(item => ({ source: feed.source, title: item.title, publishedAt: new Date(item.pubDate) }));
+      .map(item => ({ source: feed.source, title: item.title, link: item.link || '', publishedAt: new Date(item.pubDate) }));
   }
 
   async function fetchNewsClientSide() {
     const results = await Promise.allSettled(NEWS_FEEDS.map(fetchFeedViaProxy));
     const items = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
     items.sort((a, b) => b.publishedAt - a.publishedAt);
-    return items.slice(0, 8);
+    return items.slice(0, 24);
+  }
+
+  function renderNewsFilters(items) {
+    const el = document.getElementById('news-filters');
+    const sources = ['All', ...new Set(items.map(item => item.source))];
+    if (!sources.includes(newsSourceFilter)) newsSourceFilter = 'All';
+    el.innerHTML = sources.map(source => `
+      <button type="button" class="news-filter-btn${source === newsSourceFilter ? ' active' : ''}" data-source="${escapeHtml(source)}">${escapeHtml(source)}</button>
+    `).join('');
+    el.querySelectorAll('.news-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        newsSourceFilter = btn.dataset.source;
+        renderNews(lastNewsItems);
+      });
+    });
   }
 
   function renderNews(items) {
+    lastNewsItems = items;
+    renderNewsFilters(items);
+    const filtered = newsSourceFilter === 'All' ? items : items.filter(item => item.source === newsSourceFilter);
     const el = document.getElementById('news-list');
-    el.innerHTML = items.length
-      ? items.map(item => `
+    el.innerHTML = filtered.length
+      ? filtered.slice(0, 8).map(item => `
           <div class="news-item">
             <span class="news-source">${escapeHtml(item.source)}</span>
-            <span class="news-title">${escapeHtml(item.title)}</span>
+            ${item.link
+              ? `<a class="news-title" href="${escapeHtml(item.link)}" target="_blank" rel="noopener">${escapeHtml(item.title)}</a>`
+              : `<span class="news-title">${escapeHtml(item.title)}</span>`}
           </div>`).join('')
       : '<p class="control-hint">No live news available right now.</p>';
   }
@@ -724,7 +790,7 @@
         const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/news');
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
-        renderNews((data.items || []).map(item => ({ source: item.source, title: item.title })));
+        renderNews((data.items || []).map(item => ({ source: item.source, title: item.title, link: item.link || '' })));
         return;
       } catch (err) {
         // backend unreachable or not deployed yet -- fall through below
@@ -740,6 +806,15 @@
 
   refreshNews();
   setInterval(refreshNews, 60000);
+
+  // --- Live market TV ------------------------------------------------------
+  // Each option's value is that network's YouTube channel ID; the
+  // live_stream embed shows whatever is currently live on that channel (or
+  // its most recent broadcast when nothing is live right now).
+  document.getElementById('video-select').addEventListener('change', (e) => {
+    document.getElementById('video-frame').src =
+      `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(e.target.value)}&autoplay=0`;
+  });
 
   // --- Live trading control panel -------------------------------------------
   // Talks to server.py (deployed separately, e.g. on Render) which is the

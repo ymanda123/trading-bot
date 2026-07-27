@@ -1,11 +1,16 @@
-"""Live financial news for the AI strategy prompt (ai_strategy.py). Pulls
-recent headlines from public RSS feeds -- CNBC, Yahoo Finance, and
-Bloomberg -- so the model has real, current news to reason about instead of
-relying on training data. No API key required.
+"""Live financial news for the AI strategy prompt (ai_strategy.py) and the
+dashboard's news panel (server.py's /news). Pulls recent headlines from
+public RSS feeds -- CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and the
+Financial Times -- so the model has real, current news to reason about
+instead of relying on training data, and the dashboard can offer a matching
+per-source reading list. No API key required; each item's "link" points at
+the full article on the source's own site (headline + link out only --
+this never scrapes or republishes paywalled article text).
 
 CNBC's general Finance feed is filtered down to crypto-relevant headlines
-since it isn't crypto-specific; the Yahoo BTC-USD feed and Bloomberg Crypto
-feed are already on-topic and used as-is.
+since it isn't crypto-specific; the rest are general markets/economy feeds
+used as-is, since the bot now trades stocks and commodities too, not just
+crypto (see Config.SUPPORTED_ASSETS).
 """
 
 import logging
@@ -20,6 +25,9 @@ _FEEDS = [
     {"source": "CNBC", "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html", "filter_keywords": True},
     {"source": "Yahoo Finance", "url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=BTC-USD&region=US&lang=en-US", "filter_keywords": False},
     {"source": "Bloomberg", "url": "https://www.bloomberg.com/feeds/crypto/news.rss", "filter_keywords": False},
+    {"source": "WSJ", "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "filter_keywords": False},
+    {"source": "NYT", "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "filter_keywords": False},
+    {"source": "Financial Times", "url": "https://www.ft.com/rss/home/international", "filter_keywords": False},
 ]
 
 _CRYPTO_KEYWORDS = ("bitcoin", "crypto", "btc", "ethereum", "blockchain", "stablecoin")
@@ -49,7 +57,12 @@ def _fetch_one_feed(feed: dict) -> list[dict]:
             continue
         if feed["filter_keywords"] and not _mentions_crypto(title + " " + entry.get("summary", "")):
             continue
-        items.append({"source": feed["source"], "title": title, "published_at": _published_at(entry)})
+        items.append({
+            "source": feed["source"],
+            "title": title,
+            "link": entry.get("link", ""),
+            "published_at": _published_at(entry),
+        })
     return items
 
 
