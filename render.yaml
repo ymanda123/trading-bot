@@ -12,7 +12,7 @@ services:
         sync: false
       - key: CONTROL_TOKEN
         sync: false
-      - key: GEMINI_API_KEY
+      - key: GROQ_API_KEY
         sync: false
       - key: ALLOWED_ORIGIN
         value: https://ymanda123.github.io
