@@ -23,7 +23,7 @@ logger = logging.getLogger("trading-bot")
 
 _FEEDS = [
     {"source": "CNBC", "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html", "filter_keywords": True},
-    {"source": "Yahoo Finance", "url": "https://feeds.finance.yahoo.com/rss/2.0/headline?s=BTC-USD&region=US&lang=en-US", "filter_keywords": False},
+    {"source": "Yahoo Finance", "url": "https://finance.yahoo.com/news/rssindex", "filter_keywords": False},
     {"source": "Bloomberg", "url": "https://www.bloomberg.com/feeds/crypto/news.rss", "filter_keywords": False},
     {"source": "WSJ", "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "filter_keywords": False},
     {"source": "NYT", "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml", "filter_keywords": False},
