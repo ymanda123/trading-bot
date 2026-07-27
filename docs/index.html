@@ -415,11 +415,11 @@
       </p>
       <div class="video-select-row">
         <select id="video-select" class="asset-select">
-          <option value="UCIALMKvObZNtJ6AmdCLP7Lg">Bloomberg Television</option>
-          <option value="UCEAZeUIeJs0IjQiqTCdVSIg">Yahoo Finance</option>
-          <option value="UCrp_UI8XtuYfpiqluWLD7Lw">CNBC Television</option>
-          <option value="UCeY0bbntWzzVIaj2z3QigXg">NBC News</option>
-          <option value="UCupvZG-5ko_eiXAupbDfxWw">CNN</option>
+          <option value="channel:UCIALMKvObZNtJ6AmdCLP7Lg" data-channel="UCIALMKvObZNtJ6AmdCLP7Lg">Bloomberg Television</option>
+          <option value="video:KQp-e_XQnDE" data-channel="UCEAZeUIeJs0IjQiqTCdVSIg">Yahoo Finance</option>
+          <option value="channel:UCrp_UI8XtuYfpiqluWLD7Lw" data-channel="UCrp_UI8XtuYfpiqluWLD7Lw">CNBC Television</option>
+          <option value="video:94F_QMU8sCk" data-channel="UCeY0bbntWzzVIaj2z3QigXg">NBC News</option>
+          <option value="channel:UCupvZG-5ko_eiXAupbDfxWw" data-channel="UCupvZG-5ko_eiXAupbDfxWw">CNN</option>
         </select>
         <a id="video-open-link" class="repo-link" href="https://www.youtube.com/channel/UCIALMKvObZNtJ6AmdCLP7Lg/live" target="_blank" rel="noopener">Open on YouTube →</a>
       </div>
@@ -812,13 +812,20 @@
   setInterval(refreshNews, 60000);
 
   // --- Live market TV ------------------------------------------------------
-  // Each option's value is that network's YouTube channel ID; the
-  // live_stream embed shows whatever is currently live on that channel (or
-  // its most recent broadcast when nothing is live right now).
+  // Each option's value is "channel:<id>" or "video:<id>". The channel: form
+  // uses YouTube's live_stream-by-channel embed, which auto-resolves to
+  // whatever is currently live -- but that redirect silently fails to
+  // resolve for some channels (Yahoo Finance, NBC News), leaving the iframe
+  // blank even though the stream itself is live and embeddable. For those,
+  // video: pins the current 24/7 stream's own video ID directly. If a
+  // pinned stream ever ends and the ID goes stale, "Open on YouTube" (built
+  // from data-channel, not the value) always finds whatever is live now.
   document.getElementById('video-select').addEventListener('change', (e) => {
-    const channelId = e.target.value;
-    document.getElementById('video-frame').src =
-      `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(channelId)}&autoplay=0`;
+    const [type, id] = e.target.value.split(':');
+    const channelId = e.target.selectedOptions[0].dataset.channel;
+    document.getElementById('video-frame').src = type === 'video'
+      ? `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=0`
+      : `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(id)}&autoplay=0`;
     document.getElementById('video-open-link').href =
       `https://www.youtube.com/channel/${encodeURIComponent(channelId)}/live`;
   });
