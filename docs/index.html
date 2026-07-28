@@ -1333,20 +1333,24 @@
           lastNetwork = null;
           lastHandle = null;
           renderCatButtons();
-          showNext();
+          showNext('bsky'); // guarantee readable post text right away on every category switch
           startShuffle();
         });
       });
     }
 
-    function pickNext(cat) {
+    // Bluesky's API always returns real, readable post text; X's embed
+    // widget sometimes does too, but silently falls back to link-only when
+    // it's blocked (common with ad/tracker blockers) -- so Bluesky is
+    // weighted higher to keep actual post text on screen more often.
+    function pickNext(cat, forceNetwork) {
       let network, handle, attempts = 0;
       do {
-        network = Math.random() < 0.5 ? 'x' : 'bsky';
+        network = forceNetwork || (Math.random() < 0.7 ? 'bsky' : 'x');
         const pool = cat[network];
         handle = pool[Math.floor(Math.random() * pool.length)];
         attempts++;
-      } while (network === lastNetwork && handle === lastHandle && attempts < 6);
+      } while (!forceNetwork && network === lastNetwork && handle === lastHandle && attempts < 6);
       lastNetwork = network;
       lastHandle = handle;
       return { network, handle };
@@ -1416,9 +1420,9 @@
       }
     }
 
-    function showNext() {
+    function showNext(forceNetwork) {
       const cat = activeCategory;
-      const { network, handle } = pickNext(cat);
+      const { network, handle } = pickNext(cat, forceNetwork);
       const badgeCls = network === 'bsky' ? 'x-net-bsky' : 'x-net-x';
       const badgeLabel = network === 'bsky' ? 'Bluesky' : 'X';
       stageHandleEl.innerHTML = `<span class="x-net-badge ${badgeCls}">${badgeLabel}</span>@${escapeHtml(handle)}`;
@@ -1432,9 +1436,9 @@
       shuffleTimer = setInterval(showNext, 26000);
     }
 
-    if (shuffleBtn) shuffleBtn.addEventListener('click', showNext);
+    if (shuffleBtn) shuffleBtn.addEventListener('click', () => showNext());
     renderCatButtons();
-    showNext();
+    showNext('bsky'); // guarantee readable post text right away on first load
     startShuffle();
 
     // X's widget script loads in the background -- Bluesky needs no such
