@@ -27,7 +27,7 @@ already used for AI errors, no separate market-hours logic.
 | `config.py` | All tunable constants and env-driven settings |
 | `risk_manager.py` | Circuit breaker, position sizing, cool-off, friction |
 | `strategy.py` | ATR regime classification + per-regime signal logic (used directly for the high-vol standby override) |
-| `ai_strategy.py` | AI-driven strategy proposal (Groq LLM + live news + candles) gated by a backtest before it can trade |
+| `ai_strategy.py` | AI-driven strategy proposal (Ollama or Groq LLM + live news + candles) gated by a backtest before it can trade |
 | `news_feed.py` | Live news headlines from CNBC, Yahoo Finance, and Bloomberg RSS feeds, fed into the AI prompt |
 | `backtester.py` | Strategy templates (MA crossover, support/resistance, RSI) and the trade simulation used to gate `ai_strategy.py` |
 | `bot.py` | Price-fetch (CCXT for crypto, Yahoo Finance for stocks/commodities) and the live trade loop |
@@ -39,9 +39,17 @@ already used for AI errors, no separate market-hours logic.
 
 Each cycle (when not in the high-vol standby regime), `ai_strategy.py` pulls
 live Bitcoin/crypto headlines from CNBC, Yahoo Finance, and Bloomberg
-(`news_feed.py`), hands them to Groq's free-tier LLM API alongside recent
-candles, and asks it to propose one strategy template with parameters plus
-a buy/sell/hold call:
+(`news_feed.py`), hands them to an LLM alongside recent candles, and asks it
+to propose one strategy template with parameters plus a buy/sell/hold call.
+
+The LLM backend is pluggable via `AI_PROVIDER`:
+
+| Provider | `AI_PROVIDER` | Config | Notes |
+|---|---|---|---|
+| Ollama (default) | `ollama` | `OLLAMA_HOST` (default `http://localhost:11434`), `OLLAMA_MODEL` (default `llama3.1`) | Local/self-hosted, no API key, nothing leaves your machine. Run `ollama pull llama3.1` then `ollama serve` before starting the bot. |
+| Groq | `groq` | `GROQ_API_KEY` | Hosted free-tier API. https://console.groq.com/keys |
+
+Either way the response must be a JSON object naming one strategy template:
 
 | Template | Parameters |
 |---|---|
@@ -96,6 +104,10 @@ applied to that fill's notional value, on top of the underlying price move.
 ## Running
 
 ```bash
+# Ollama (default AI provider) -- install from https://ollama.com, then:
+ollama pull llama3.1
+ollama serve &
+
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt

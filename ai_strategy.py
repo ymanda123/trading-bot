@@ -1,11 +1,13 @@
 """AI-driven trading decision. Replaces strategy.py's fixed rules for the
 trending / range-bound regimes with a two-step AI + validation pipeline:
 
-  1. An LLM (Groq's free-tier API) looks at recent price action AND live
-     headlines pulled from CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and
-     the Financial Times (news_feed.py), then proposes ONE strategy (from a
-     small backtestable template set)
-     plus the buy/sell/hold call that strategy makes right now.
+  1. An LLM looks at recent price action AND live headlines pulled from
+     CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and the Financial Times
+     (news_feed.py), then proposes ONE strategy (from a small backtestable
+     template set) plus the buy/sell/hold call that strategy makes right
+     now. The model is pluggable via Config.AI_PROVIDER: "ollama" (default)
+     talks to a local/self-hosted Ollama server, "groq" uses Groq's hosted
+     free-tier API.
   2. That exact strategy is replayed against recent candle history
      (backtester.run_backtest) before it's trusted. Only a strategy that
      actually shows a positive, evidenced edge over that window is allowed
@@ -18,8 +20,14 @@ matter what the model or the backtest says. And once a signal is allowed
 through, position sizing, stop distance, the circuit breaker, and the
 cool-off are still entirely risk_manager.py's job, unchanged.
 
-Uses Groq's free-tier API (no credit card required), configured via the
-GROQ_API_KEY environment variable. https://console.groq.com/keys
+Provider setup:
+  - Ollama (default): install from https://ollama.com, run `ollama pull
+    llama3.1` (or whichever model), then `ollama serve`. Configured via the
+    OLLAMA_HOST (default http://localhost:11434) and OLLAMA_MODEL (default
+    llama3.1) environment variables. No API key, nothing leaves your
+    machine.
+  - Groq: set AI_PROVIDER=groq and GROQ_API_KEY (no credit card required).
+    https://console.groq.com/keys
 """
 
 import json
@@ -27,7 +35,7 @@ import logging
 import os
 import re
 
-from groq import Groq
+import requests
 
 from backtester import STRATEGY_TYPES, run_backtest
 from config import Config
@@ -36,7 +44,7 @@ from strategy import Regime, Signal, StrategyDecision, classify_regime
 
 logger = logging.getLogger("trading-bot")
 
-_client = None
+_groq_client = None
 
 _GROQ_MODEL = "llama-3.3-70b-versatile"
 
@@ -47,11 +55,50 @@ _STRATEGY_PARAM_SPEC = (
 )
 
 
-def _get_client():
-    global _client
-    if _client is None:
-        _client = Groq(api_key=os.environ["GROQ_API_KEY"])
-    return _client
+def _get_groq_client():
+    global _groq_client
+    if _groq_client is None:
+        from groq import Groq
+
+        _groq_client = Groq(api_key=os.environ["GROQ_API_KEY"])
+    return _groq_client
+
+
+def _call_ollama(prompt: str, config) -> str:
+    """POST to a local/self-hosted Ollama server's chat endpoint, asking for
+    a JSON-only response (Ollama's "format": "json" mode)."""
+    response = requests.post(
+        f"{config.OLLAMA_HOST.rstrip('/')}/api/chat",
+        json={
+            "model": config.OLLAMA_MODEL,
+            "messages": [{"role": "user", "content": prompt}],
+            "format": "json",
+            "stream": False,
+            "options": {"temperature": 0.3},
+        },
+        timeout=60,
+    )
+    response.raise_for_status()
+    return response.json()["message"]["content"]
+
+
+def _call_groq(prompt: str) -> str:
+    response = _get_groq_client().chat.completions.create(
+        model=_GROQ_MODEL,
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.3,
+        response_format={"type": "json_object"},
+    )
+    return response.choices[0].message.content
+
+
+def _call_llm(prompt: str, config) -> str:
+    provider = config.AI_PROVIDER
+    if provider == "ollama":
+        return _call_ollama(prompt, config)
+    if provider == "groq":
+        return _call_groq(prompt)
+    raise ValueError(f"unknown AI_PROVIDER {provider!r} (expected 'ollama' or 'groq')")
 
 
 def _format_candles(df, n=30) -> str:
@@ -103,13 +150,8 @@ def propose_strategy(df, regime, atr, config=Config) -> dict:
     )
 
     try:
-        response = _get_client().chat.completions.create(
-            model=_GROQ_MODEL,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            response_format={"type": "json_object"},
-        )
-        data = _extract_json(response.choices[0].message.content)
+        content = _call_llm(prompt, config)
+        data = _extract_json(content)
         strategy_type = data["strategy_type"]
         if strategy_type not in STRATEGY_TYPES:
             raise ValueError(f"unknown strategy_type {strategy_type!r}")

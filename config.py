@@ -74,3 +74,13 @@ class Config:
     # --- AI strategy proposal + backtest gate ---------------------------------
     AI_HISTORY_CANDLES = 150  # bars of history given to the AI and used to backtest its proposed strategy
     BACKTEST_MIN_TRADES = 3   # minimum trades in the backtest window before a strategy's edge is trusted
+
+    # --- AI provider ------------------------------------------------------------
+    # "ollama" talks to a locally (or self-)hosted Ollama server -- no API key,
+    # no per-call cost, nothing leaves your machine. "groq" uses Groq's hosted
+    # free-tier API instead. Either way ai_strategy.py's backtest gate and the
+    # risk-management rules apply identically -- only where the proposal comes
+    # from changes.
+    AI_PROVIDER = os.getenv("AI_PROVIDER", "ollama")
+    OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")

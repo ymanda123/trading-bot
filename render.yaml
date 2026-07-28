@@ -14,6 +14,12 @@ services:
         sync: false
       - key: GROQ_API_KEY
         sync: false
+      # Render has no local Ollama server to reach, so this deployment keeps
+      # using Groq (config.py's AI_PROVIDER default is "ollama", meant for
+      # local runs). To point at a self-hosted Ollama instead, override
+      # AI_PROVIDER=ollama and OLLAMA_HOST here.
+      - key: AI_PROVIDER
+        value: groq
       - key: ALLOWED_ORIGIN
         value: https://ymanda123.github.io
       - key: SYMBOL
