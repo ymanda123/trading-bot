@@ -27,6 +27,7 @@ from flask_cors import CORS
 
 from bot import TradingBot
 from config import Config
+from live_tv import get_live_tv
 from news_feed import fetch_news
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -182,6 +183,24 @@ def news():
         }
         for item in items
     ])
+
+
+@app.get("/live-tv")
+def live_tv():
+    """Read-only, unauthenticated -- resolves each network's currently-live
+    YouTube video ID server-side (see live_tv.py for why: browsers can't do
+    this themselves, and most networks' streams are effectively permanent
+    except NBC News NOW, which starts a new video ID for every day's
+    broadcast). Cached for 10 minutes per network, so this is cheap to poll.
+    The dashboard falls back to its own hardcoded pins if this endpoint is
+    unreachable or not configured, so it's never a hard dependency."""
+    try:
+        networks = get_live_tv()
+    except Exception:
+        logger.exception("Live TV resolve failed")
+        networks = {}
+
+    return jsonify(networks=networks)
 
 
 if __name__ == "__main__":

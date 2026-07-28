@@ -569,11 +569,11 @@
       </p>
       <div class="video-select-row">
         <select id="video-select" class="asset-select">
-          <option value="video:QB5BNdBFujE" data-channel="UCIALMKvObZNtJ6AmdCLP7Lg">Bloomberg Television</option>
-          <option value="video:KQp-e_XQnDE" data-channel="UCEAZeUIeJs0IjQiqTCdVSIg">Yahoo Finance</option>
-          <option value="channel:UCrp_UI8XtuYfpiqluWLD7Lw" data-channel="UCrp_UI8XtuYfpiqluWLD7Lw">CNBC Television</option>
-          <option value="video:TQkfLoqeI2M" data-channel="UCeY0bbntWzzVIaj2z3QigXg">NBC News</option>
-          <option value="video:GotlA1KKWoo" data-channel="UCupvZG-5ko_eiXAupbDfxWw">CNN</option>
+          <option value="video:QB5BNdBFujE" data-channel="UCIALMKvObZNtJ6AmdCLP7Lg" data-network="bloomberg">Bloomberg Television</option>
+          <option value="video:KQp-e_XQnDE" data-channel="UCEAZeUIeJs0IjQiqTCdVSIg" data-network="yahoo">Yahoo Finance</option>
+          <option value="channel:UCrp_UI8XtuYfpiqluWLD7Lw" data-channel="UCrp_UI8XtuYfpiqluWLD7Lw" data-network="cnbc">CNBC Television</option>
+          <option value="video:TQkfLoqeI2M" data-channel="UCeY0bbntWzzVIaj2z3QigXg" data-network="nbc">NBC News</option>
+          <option value="video:GotlA1KKWoo" data-channel="UCupvZG-5ko_eiXAupbDfxWw" data-network="cnn">CNN</option>
         </select>
         <a id="video-open-link" class="repo-link" href="https://www.youtube.com/channel/UCIALMKvObZNtJ6AmdCLP7Lg/live" target="_blank" rel="noopener">Open on YouTube →</a>
       </div>
@@ -1076,22 +1076,57 @@
   // pinned stream ever ends and the ID goes stale, "Open on YouTube" (built
   // from data-channel, not the value) always finds whatever is live now.
   // Bloomberg/Yahoo Finance/CNN each run one persistent 24/7 stream, so their
-  // pin is effectively evergreen. NBC News NOW is the exception: it starts a
-  // *new* video ID for each day's live broadcast, so its pin needs manual
-  // refreshing periodically (whenever it goes stale, "Open on YouTube" ->
-  // grab the new video ID from the URL -> update the option's value above).
-  // CNBC Television has no persistent free live stream to pin at all (its
-  // cable feed is CNBC+-only); channel: is left as-is and simply shows
-  // nothing when CNBC has no free YouTube live segment running.
-  document.getElementById('video-select').addEventListener('change', (e) => {
-    const [type, id] = e.target.value.split(':');
-    const channelId = e.target.selectedOptions[0].dataset.channel;
+  // hardcoded pin below is effectively evergreen and doubles as the offline
+  // fallback. NBC News NOW is the exception: it starts a *new* video ID for
+  // each day's live broadcast, so its hardcoded pin alone would go stale on
+  // a ~24h clock -- refreshLiveTvPins() below re-resolves it (and the
+  // others, as a sanity check) from server.py's /live-tv each load, which
+  // does this same YouTube lookup server-side. CNBC Television has no
+  // persistent free live stream to pin at all (its cable feed is CNBC+
+  // only); channel: is left as-is there and simply shows nothing when CNBC
+  // has no free YouTube live segment running, same as before.
+  function applyVideoSelection(select) {
+    const [type, id] = select.value.split(':');
+    const channelId = select.selectedOptions[0].dataset.channel;
     document.getElementById('video-frame').src = type === 'video'
       ? `https://www.youtube.com/embed/${encodeURIComponent(id)}?autoplay=0`
       : `https://www.youtube.com/embed/live_stream?channel=${encodeURIComponent(id)}&autoplay=0`;
     document.getElementById('video-open-link').href =
       `https://www.youtube.com/channel/${encodeURIComponent(channelId)}/live`;
-  });
+  }
+
+  document.getElementById('video-select').addEventListener('change', (e) => applyVideoSelection(e.target));
+
+  async function refreshLiveTvPins() {
+    const backendUrl = localStorage.getItem('tb_backend_url') || '';
+    if (!backendUrl) return; // no backend configured -- keep the hardcoded pins above as-is
+    try {
+      const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/live-tv');
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      const networks = data.networks || {};
+      const select = document.getElementById('video-select');
+      const previouslySelected = select.value;
+      let selectedValueChanged = false;
+
+      [...select.options].forEach(opt => {
+        const info = networks[opt.dataset.network];
+        if (!info) return;
+        const freshValue = info.video_id ? `video:${info.video_id}` : `channel:${info.channel_id}`;
+        if (opt.value !== freshValue) {
+          const wasSelected = opt.value === previouslySelected;
+          opt.value = freshValue;
+          if (wasSelected) selectedValueChanged = true;
+        }
+      });
+
+      if (selectedValueChanged) applyVideoSelection(select);
+    } catch (err) {
+      // backend unreachable or not deployed -- keep the hardcoded pins above as-is
+    }
+  }
+  refreshLiveTvPins();
+  setInterval(refreshLiveTvPins, 600000); // matches the backend's own 10-minute cache
 
   // --- Live trading control panel -------------------------------------------
   // Talks to server.py (deployed separately, e.g. on Render) which is the
