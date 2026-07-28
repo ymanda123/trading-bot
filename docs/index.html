@@ -569,7 +569,7 @@
       </p>
       <div class="video-select-row">
         <select id="video-select" class="asset-select">
-          <option value="channel:UCIALMKvObZNtJ6AmdCLP7Lg" data-channel="UCIALMKvObZNtJ6AmdCLP7Lg">Bloomberg Television</option>
+          <option value="video:QB5BNdBFujE" data-channel="UCIALMKvObZNtJ6AmdCLP7Lg">Bloomberg Television</option>
           <option value="video:KQp-e_XQnDE" data-channel="UCEAZeUIeJs0IjQiqTCdVSIg">Yahoo Finance</option>
           <option value="channel:UCrp_UI8XtuYfpiqluWLD7Lw" data-channel="UCrp_UI8XtuYfpiqluWLD7Lw">CNBC Television</option>
           <option value="video:94F_QMU8sCk" data-channel="UCeY0bbntWzzVIaj2z3QigXg">NBC News</option>
@@ -578,7 +578,7 @@
         <a id="video-open-link" class="repo-link" href="https://www.youtube.com/channel/UCIALMKvObZNtJ6AmdCLP7Lg/live" target="_blank" rel="noopener">Open on YouTube →</a>
       </div>
       <div class="video-frame-wrap">
-        <iframe id="video-frame" src="https://www.youtube.com/embed/live_stream?channel=UCIALMKvObZNtJ6AmdCLP7Lg&autoplay=0"
+        <iframe id="video-frame" src="https://www.youtube.com/embed/QB5BNdBFujE?autoplay=0"
           title="Live market TV" allow="accelerometer; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
       </div>
       <p class="control-hint">These networks run scheduled programming rather than a nonstop broadcast — if the embed looks blank because nothing's live right now, use "Open on YouTube" above to check the schedule or watch the latest replay.</p>
@@ -1070,7 +1070,7 @@
   // Each option's value is "channel:<id>" or "video:<id>". The channel: form
   // uses YouTube's live_stream-by-channel embed, which auto-resolves to
   // whatever is currently live -- but that redirect silently fails to
-  // resolve for some channels (Yahoo Finance, NBC News), leaving the iframe
+  // resolve for some channels (Bloomberg Television, Yahoo Finance, NBC News), leaving the iframe
   // blank even though the stream itself is live and embeddable. For those,
   // video: pins the current 24/7 stream's own video ID directly. If a
   // pinned stream ever ends and the ID goes stale, "Open on YouTube" (built
