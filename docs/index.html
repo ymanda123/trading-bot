@@ -4,6 +4,9 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Regime-Switching Trading Bot</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
 <style>
   .viz-root {
@@ -24,6 +27,9 @@
     --status-good:     #0ca30c;
     --status-warning:  #fab219;
     --status-critical: #d03b3b;
+    --accent-gold:     #b8892b;
+    --glow-1:          rgba(42,120,214,0.16);
+    --grid-line-faint: rgba(11,11,11,0.035);
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme="light"])) .viz-root {
@@ -44,6 +50,9 @@
       --status-good:     #0ca30c;
       --status-warning:  #fab219;
       --status-critical: #e66767;
+      --accent-gold:     #e0b559;
+      --glow-1:          rgba(57,135,229,0.20);
+      --grid-line-faint: rgba(255,255,255,0.035);
     }
   }
   :root[data-theme="dark"] .viz-root {
@@ -64,21 +73,64 @@
     --status-good:     #0ca30c;
     --status-warning:  #fab219;
     --status-critical: #e66767;
+    --accent-gold:     #e0b559;
+    --glow-1:          rgba(57,135,229,0.20);
+    --grid-line-faint: rgba(255,255,255,0.035);
   }
 
   * { box-sizing: border-box; }
-  body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  body { margin: 0; font-family: 'Inter', system-ui, -apple-system, "Segoe UI", sans-serif; }
   .viz-root {
-    background: var(--page-plane);
+    background:
+      radial-gradient(ellipse 900px 500px at 15% -10%, var(--glow-1), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 0%, color-mix(in srgb, var(--accent-gold) 10%, transparent), transparent 55%),
+      repeating-linear-gradient(to right, var(--grid-line-faint) 0, var(--grid-line-faint) 1px, transparent 1px, transparent 64px),
+      repeating-linear-gradient(to bottom, var(--grid-line-faint) 0, var(--grid-line-faint) 1px, transparent 1px, transparent 64px),
+      var(--page-plane);
     color: var(--text-primary);
     min-height: 100vh;
-    padding: 24px 16px 64px;
+    padding: 0 16px 64px;
   }
   .wrap { max-width: 1080px; margin: 0 auto; }
 
-  header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
-  h1 { font-size: 22px; margin: 0 0 4px; }
-  .sub { color: var(--text-secondary); font-size: 14px; margin: 0; }
+  .ticker-tape {
+    position: sticky; top: 0; z-index: 20;
+    margin: 0 -16px 20px;
+    background: color-mix(in srgb, var(--surface-1) 88%, transparent);
+    backdrop-filter: blur(10px) saturate(140%);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+    white-space: nowrap;
+    padding: 8px 0;
+  }
+  .ticker-track { display: inline-flex; align-items: center; animation: ticker-scroll 38s linear infinite; }
+  .ticker-tape:hover .ticker-track { animation-play-state: paused; }
+  @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+  .ticker-item {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    font-family: 'JetBrains Mono', monospace; font-size: 12.5px;
+    padding: 0 22px; border-right: 1px solid var(--border);
+  }
+  .ticker-item .tk-sym { color: var(--text-muted); font-weight: 500; }
+  .ticker-item .tk-px { color: var(--text-primary); font-weight: 600; }
+  .ticker-item .tk-chg.up { color: var(--status-good); }
+  .ticker-item .tk-chg.down { color: var(--status-critical); }
+
+  header.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin: 20px 0 24px; }
+  h1 {
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em;
+    background: linear-gradient(100deg, var(--text-primary) 40%, var(--series-1) 80%, var(--accent-gold) 110%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { color: var(--text-secondary); font-size: 14px; margin: 0; display: flex; align-items: center; gap: 8px; }
+  .live-dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--status-good); flex: none; }
+  .live-dot::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 1px solid var(--status-good); animation: live-pulse 1.8s ease-out infinite;
+  }
+  @keyframes live-pulse { 0% { transform: scale(0.6); opacity: 0.9; } 100% { transform: scale(2.1); opacity: 0; } }
   .repo-link { color: var(--series-1); text-decoration: none; font-size: 13px; }
   .repo-link:hover { text-decoration: underline; }
 
@@ -150,18 +202,28 @@
   .tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
   @media (max-width: 720px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
   .tile {
+    position: relative;
     background: var(--surface-1);
     border: 1px solid var(--border);
-    border-radius: 10px;
+    border-radius: 12px;
     padding: 14px 16px;
+    overflow: hidden;
+    transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease;
   }
+  .tile::before {
+    content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
+    background: linear-gradient(90deg, var(--series-1), var(--accent-gold));
+    opacity: 0; transition: opacity .18s ease;
+  }
+  .tile:hover { transform: translateY(-2px); box-shadow: 0 10px 28px -12px var(--glow-1); border-color: color-mix(in srgb, var(--series-1) 40%, var(--border)); }
+  .tile:hover::before { opacity: 1; }
   .tile .label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
-  .tile .value { font-size: 20px; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .tile .value { font-family: 'JetBrains Mono', monospace; font-size: 20px; font-variant-numeric: tabular-nums; font-weight: 600; }
   .badge {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
   }
-  .badge .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 18%, transparent); }
   .badge.regime-range   { background: color-mix(in srgb, var(--series-1) 16%, transparent); color: var(--series-1); }
   .badge.regime-range .dot   { background: var(--series-1); }
   .badge.regime-trend   { background: color-mix(in srgb, var(--series-3) 16%, transparent); color: var(--series-3); }
@@ -179,9 +241,18 @@
   .badge.sig-hold { background: color-mix(in srgb, var(--text-muted) 20%, transparent); color: var(--text-secondary); }
   .badge.sig-hold .dot { background: var(--text-muted); }
 
-  section { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; margin-bottom: 16px; }
-  section h2 { font-size: 15px; margin: 0 0 4px; }
+  section {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 14px;
+    padding: 18px 20px; margin-bottom: 16px;
+    box-shadow: 0 1px 0 var(--border), 0 12px 32px -20px rgba(0,0,0,0.35);
+    transition: box-shadow .2s ease, border-color .2s ease;
+  }
+  section:hover { border-color: color-mix(in srgb, var(--series-1) 25%, var(--border)); }
+  section h2 { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 16px; margin: 0 0 4px; letter-spacing: -0.005em; }
   section .desc { font-size: 13px; color: var(--text-secondary); margin: 0 0 14px; }
+
+  .reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s ease, transform .55s ease; }
+  .reveal.is-visible { opacity: 1; transform: translateY(0); }
 
   #chart { width: 100%; height: 560px; }
   #status-line { font-size: 13px; color: var(--text-muted); margin-top: 8px; }
@@ -211,15 +282,17 @@
 
   .tiers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   @media (max-width: 720px) { .tiers { grid-template-columns: 1fr; } }
-  .tier-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .tier-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; transition: transform .18s ease, border-color .18s ease; }
+  .tier-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--series-1) 35%, var(--border)); }
   .tier-card .chip { display: inline-block; width: 100%; height: 6px; border-radius: 4px; margin-bottom: 10px; }
   .tier-card .t-label { font-size: 12px; color: var(--text-muted); }
-  .tier-card .t-value { font-size: 18px; font-weight: 600; margin: 2px 0 8px; }
+  .tier-card .t-value { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 600; margin: 2px 0 8px; }
   .tier-card .t-sub { font-size: 12px; color: var(--text-secondary); }
 
   .rules { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
   @media (max-width: 720px) { .rules { grid-template-columns: 1fr; } }
-  .rule-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
+  .rule-card { border: 1px solid var(--border); border-radius: 10px; padding: 12px; transition: transform .18s ease, border-color .18s ease; }
+  .rule-card:hover { transform: translateY(-2px); border-color: color-mix(in srgb, var(--series-1) 35%, var(--border)); }
   .rule-card .r-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
   .rule-card .r-body { font-size: 12px; color: var(--text-secondary); }
 
@@ -231,15 +304,76 @@
 
   footer { font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 24px; }
   footer a { color: var(--series-1); }
+
+  /* --- X / Twitter signals section ------------------------------------- */
+  .x-section {
+    background:
+      radial-gradient(ellipse 500px 260px at 100% 0%, var(--glow-1), transparent 65%),
+      var(--surface-1);
+    border: 1px solid var(--border);
+  }
+  .x-title-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .x-title-left { display: flex; align-items: center; gap: 8px; }
+  .x-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.03em; text-transform: uppercase;
+    padding: 3px 9px; border-radius: 999px;
+    background: color-mix(in srgb, var(--text-primary) 92%, transparent);
+    color: var(--page-plane);
+  }
+  .x-badge .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--status-good); position: relative; }
+  .x-badge .dot::after { content: ""; position: absolute; inset: -3px; border-radius: 50%; border: 1px solid var(--status-good); animation: live-pulse 1.8s ease-out infinite; }
+
+  .x-cats { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 12px; }
+  .x-cat-btn {
+    border: 1px solid var(--border); background: var(--page-plane); color: var(--text-secondary);
+    border-radius: 999px; padding: 5px 13px; font-size: 12px; cursor: pointer; font-family: inherit;
+    transition: background .15s ease, color .15s ease, border-color .15s ease;
+  }
+  .x-cat-btn.active { background: linear-gradient(100deg, var(--series-1), var(--accent-gold)); border-color: transparent; color: #fff; }
+
+  .x-stage {
+    position: relative;
+    border: 1px solid var(--border); border-radius: 12px;
+    background: var(--page-plane);
+    min-height: 420px;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+  }
+  .x-stage-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-muted);
+  }
+  .x-stage-head .x-handle { color: var(--text-primary); font-weight: 600; font-family: 'JetBrains Mono', monospace; }
+  .x-shuffle-btn {
+    border: 1px solid var(--border); background: var(--surface-1); color: var(--text-secondary);
+    border-radius: 6px; padding: 4px 10px; font-size: 11px; cursor: pointer; font-family: inherit;
+  }
+  .x-shuffle-btn:hover { border-color: var(--series-1); color: var(--series-1); }
+  .x-embed-wrap { flex: 1; padding: 4px 6px; opacity: 1; transition: opacity .25s ease; overflow: hidden; }
+  .x-embed-wrap.is-loading { opacity: 0.35; }
+  .x-fallback-list { display: grid; gap: 10px; padding: 12px 14px; }
+  .x-fallback-item { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 13px; }
+  .x-fallback-item a { color: var(--series-1); text-decoration: none; font-weight: 600; }
+  .x-fallback-item a:hover { text-decoration: underline; }
+  .x-fallback-item .x-topic { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 4px; }
+
+  .x-note { font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
 </style>
 </head>
 <body>
 <div class="viz-root" id="viz-root">
+  <div class="ticker-tape" id="ticker-tape">
+    <div class="ticker-track" id="ticker-track">
+      <span class="ticker-item"><span class="tk-sym">Loading live prices…</span></span>
+    </div>
+  </div>
   <div class="wrap">
     <header class="top">
       <div>
         <h1>Regime-Switching Trading Bot</h1>
-        <p class="sub">Live BTC/USDT market read · CCXT + Binance Testnet paper-trading engine</p>
+        <p class="sub"><span class="live-dot"></span>Live BTC/USDT market read · CCXT + Binance Testnet paper-trading engine</p>
         <a class="repo-link" href="https://github.com/ymanda123/trading-bot" target="_blank" rel="noopener">github.com/ymanda123/trading-bot →</a>
       </div>
       <button class="theme-toggle" id="theme-toggle" type="button">Dark mode</button>
@@ -264,7 +398,7 @@
       </div>
     </div>
 
-    <section id="control-panel">
+    <section id="control-panel" class="reveal">
       <div class="control-row">
         <div class="control-left">
           <label class="switch">
@@ -314,7 +448,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="reveal">
       <h2>BTC/USDT — 1h</h2>
       <p class="desc">Live public market data (Coinbase, Kraken, or Binance — whichever responds), with the bot's fast(10)/slow(30) moving averages, 20-bar support/resistance, and 14-period RSI overlaid.</p>
       <div id="chart"></div>
@@ -327,7 +461,7 @@
       </details>
     </section>
 
-    <section>
+    <section class="reveal">
       <h2>Regime Classification</h2>
       <p class="desc">14-period ATR, expressed as a percentage of price, routes to one of three regimes.</p>
       <div class="rules">
@@ -346,7 +480,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="reveal">
       <h2>Risk Management Guardrails</h2>
       <p class="desc">Reference rules enforced by <code>risk_manager.py</code> — verified by 16 passing pytest cases.</p>
 
@@ -387,7 +521,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="reveal">
       <h2>AI Strategy Validation</h2>
       <p class="desc">How a signal earns the right to become a live paper trade — see the "AI reasoning" row above for the current cycle's verdict.</p>
       <div class="rules">
@@ -406,7 +540,7 @@
       </div>
     </section>
 
-    <section>
+    <section class="reveal">
       <h2>Live Market TV</h2>
       <p class="desc">
         Each network's own free live stream, embedded via YouTube's official player — nothing here is scraped
@@ -430,13 +564,41 @@
       <p class="control-hint">These networks run scheduled programming rather than a nonstop broadcast — if the embed looks blank because nothing's live right now, use "Open on YouTube" above to check the schedule or watch the latest replay.</p>
     </section>
 
-    <section>
+    <section class="reveal">
       <h2>Live News Feed</h2>
       <p class="desc">Headlines from CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and the Financial Times — the same sources the AI reads each cycle before proposing a strategy. Click a headline to read the full article on the source's own site.</p>
       <div id="news-filters" class="news-filters"></div>
       <div id="news-list" class="news-list">
         <p class="control-hint">Loading live news…</p>
       </div>
+    </section>
+
+    <section class="reveal x-section">
+      <div class="x-title-row">
+        <h2 style="margin:0">X / Twitter — Breaking News Signals</h2>
+        <span class="x-badge"><span class="dot"></span>Live feed</span>
+      </div>
+      <p class="desc">
+        Alongside the RSS wires above, X is where market-moving news breaks first. When a credible voice —
+        a central bank, a head of state, a market-moving CEO or institution — posts something that could
+        swing tech, finance, AI, or trading markets, that's exactly the kind of real-time signal
+        <code>ai_strategy.py</code> is meant to weigh before it proposes a trade. Pick a subject below; within
+        its own box this panel keeps shuffling through what credible accounts in that space are posting right now.
+      </p>
+      <div class="x-cats" id="x-cats"></div>
+      <div class="x-stage" id="x-stage">
+        <div class="x-stage-head">
+          <span>Now showing <span class="x-handle" id="x-current-handle">@…</span></span>
+          <button class="x-shuffle-btn" id="x-shuffle-btn" type="button">Shuffle ↻</button>
+        </div>
+        <div class="x-embed-wrap" id="x-embed-wrap"></div>
+      </div>
+      <p class="x-note">
+        Embeds are X's own official public timeline widgets — genuine posts from the accounts shown, no
+        scraping and no API key involved. If a widget can't load (tracker blockers, offline, or the account
+        goes private/suspended), a direct-link list to that subject's accounts appears instead. This panel is
+        a read-only signal source: it never posts, follows, or takes any action on X on the bot's behalf.
+      </p>
     </section>
 
     <footer>
@@ -464,6 +626,77 @@
   }
   toggle.addEventListener('click', () => applyTheme(currentIsDark() ? 'light' : 'dark'));
   applyTheme(null);
+
+  // --- Scroll reveal -----------------------------------------------------------
+  (function initReveal() {
+    const els = document.querySelectorAll('.reveal');
+    if (!('IntersectionObserver' in window)) { els.forEach(el => el.classList.add('is-visible')); return; }
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) { entry.target.classList.add('is-visible'); io.unobserve(entry.target); }
+      });
+    }, { threshold: 0.08, rootMargin: '0px 0px -40px 0px' });
+    els.forEach(el => io.observe(el));
+  })();
+
+  // --- Count-up animation for the static dollar tiles ---------------------------
+  (function animateTileValues() {
+    document.querySelectorAll('.tile .value').forEach(el => {
+      const text = el.textContent.trim();
+      const match = text.match(/^\$([\d,]+\.\d{2})$/);
+      if (!match) return;
+      const target = parseFloat(match[1].replace(/,/g, ''));
+      const duration = 900;
+      const start = performance.now();
+      function tick(now) {
+        const progress = Math.min((now - start) / duration, 1);
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.textContent = '$' + (target * eased).toFixed(2);
+        if (progress < 1) requestAnimationFrame(tick);
+        else el.textContent = text;
+      }
+      requestAnimationFrame(tick);
+    });
+  })();
+
+  // --- Live price ticker tape ----------------------------------------------------
+  // CoinGecko's simple/price endpoint is free, keyless, and sends
+  // Access-Control-Allow-Origin, so it works directly from the browser.
+  const TICKER_IDS = [
+    { id: 'bitcoin', sym: 'BTC' },
+    { id: 'ethereum', sym: 'ETH' },
+    { id: 'solana', sym: 'SOL' },
+    { id: 'binancecoin', sym: 'BNB' },
+    { id: 'ripple', sym: 'XRP' },
+    { id: 'dogecoin', sym: 'DOGE' },
+  ];
+
+  async function refreshTicker() {
+    const track = document.getElementById('ticker-track');
+    try {
+      const ids = TICKER_IDS.map(t => t.id).join(',');
+      const resp = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`);
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      const data = await resp.json();
+      const itemsHtml = TICKER_IDS.map(t => {
+        const row = data[t.id];
+        if (!row || typeof row.usd !== 'number') return '';
+        const price = row.usd;
+        const chg = row.usd_24h_change ?? 0;
+        const dir = chg >= 0 ? 'up' : 'down';
+        const arrow = chg >= 0 ? '▲' : '▼';
+        const priceStr = price >= 1
+          ? price.toLocaleString(undefined, { maximumFractionDigits: 2, minimumFractionDigits: 2 })
+          : price.toFixed(4);
+        return `<span class="ticker-item"><span class="tk-sym">${t.sym}/USD</span><span class="tk-px">$${priceStr}</span><span class="tk-chg ${dir}">${arrow} ${Math.abs(chg).toFixed(2)}%</span></span>`;
+      }).join('');
+      if (itemsHtml) track.innerHTML = itemsHtml + itemsHtml; // duplicated for a seamless scroll loop
+    } catch (err) {
+      track.innerHTML = `<span class="ticker-item"><span class="tk-sym">Ticker unavailable — ${escapeHtml(String(err.message || err))}</span></span>`;
+    }
+  }
+  refreshTicker();
+  setInterval(refreshTicker, 60000);
 
   const ATR_PERIOD = 14;
   const LOW_VOL_THRESHOLD = 0.01;
@@ -1012,6 +1245,128 @@
 
     refreshEnabledState();
     if (configured()) { loadAssets(); startPolling(); }
+  })();
+
+  // --- X / Twitter breaking-news signals panel -----------------------------
+  // Purely a read-only "what would the bot's news input look like on X"
+  // panel: official public timeline embeds (platform.twitter.com/widgets.js,
+  // no API key, no scraping) for a curated set of credible accounts --
+  // world leaders/institutions, finance & markets, tech & AI, and trading/
+  // crypto outlets. It auto-shuffles which account's timeline is showing
+  // within its own box, and falls back to a plain link list if the widget
+  // script is blocked (ad/tracker blockers commonly block platform.twitter.com).
+  const X_CATEGORIES = [
+    {
+      id: 'leaders', label: 'World Leaders & Institutions',
+      handles: ['WhiteHouse', 'federalreserve', 'ecb', 'IMFNews', 'POTUS'],
+    },
+    {
+      id: 'finance', label: 'Finance & Markets',
+      handles: ['business', 'DeItaone', 'unusual_whales', 'WSJmarkets', 'FirstSquawk'],
+    },
+    {
+      id: 'tech-ai', label: 'Tech & AI',
+      handles: ['sama', 'OpenAI', 'sundarpichai', 'satyanadella', 'elonmusk'],
+    },
+    {
+      id: 'trading', label: 'Trading & Crypto',
+      handles: ['zerohedge', 'CoinDesk', 'Benzinga', 'WatcherGuru'],
+    },
+  ];
+
+  (function initXPanel() {
+    const catsEl = document.getElementById('x-cats');
+    const stageHandleEl = document.getElementById('x-current-handle');
+    const embedWrap = document.getElementById('x-embed-wrap');
+    const shuffleBtn = document.getElementById('x-shuffle-btn');
+    if (!catsEl || !embedWrap) return;
+
+    let activeCategory = X_CATEGORIES[0];
+    let lastHandle = null;
+    let shuffleTimer = null;
+    let widgetsFailed = false;
+    let widgetsAnnounced = false;
+
+    function renderCatButtons() {
+      catsEl.innerHTML = X_CATEGORIES.map(cat => `
+        <button type="button" class="x-cat-btn${cat.id === activeCategory.id ? ' active' : ''}" data-id="${cat.id}">${escapeHtml(cat.label)}</button>
+      `).join('');
+      catsEl.querySelectorAll('.x-cat-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const cat = X_CATEGORIES.find(c => c.id === btn.dataset.id);
+          if (!cat || cat === activeCategory) return;
+          activeCategory = cat;
+          lastHandle = null;
+          renderCatButtons();
+          showNext();
+          startShuffle();
+        });
+      });
+    }
+
+    function pickHandle(cat) {
+      const pool = cat.handles.filter(h => h !== lastHandle);
+      const choice = pool[Math.floor(Math.random() * pool.length)] || cat.handles[0];
+      lastHandle = choice;
+      return choice;
+    }
+
+    function renderFallback(cat, handle) {
+      embedWrap.classList.remove('is-loading');
+      embedWrap.innerHTML = `<div class="x-fallback-list">${cat.handles.map(h => `
+        <div class="x-fallback-item">
+          <div class="x-topic">${escapeHtml(cat.label)}${h === handle ? ' · shuffled to this one' : ''}</div>
+          <a href="https://x.com/${encodeURIComponent(h)}" target="_blank" rel="noopener">@${escapeHtml(h)} →</a>
+        </div>`).join('')}</div>`;
+    }
+
+    function showNext() {
+      const cat = activeCategory;
+      const handle = pickHandle(cat);
+      stageHandleEl.textContent = '@' + handle;
+
+      if (widgetsFailed || typeof twttr === 'undefined' || !twttr.widgets) {
+        renderFallback(cat, handle);
+        return;
+      }
+      embedWrap.classList.add('is-loading');
+      twttr.widgets.createTimeline(
+        { sourceType: 'profile', screenName: handle },
+        embedWrap,
+        { height: 380, chrome: 'noheader nofooter noborders transparent', theme: currentIsDark() ? 'dark' : 'light' }
+      ).then(el => {
+        embedWrap.classList.remove('is-loading');
+        if (!el) renderFallback(cat, handle);
+      }).catch(() => {
+        embedWrap.classList.remove('is-loading');
+        renderFallback(cat, handle);
+      });
+    }
+
+    function startShuffle() {
+      if (shuffleTimer) clearInterval(shuffleTimer);
+      shuffleTimer = setInterval(showNext, 26000);
+    }
+
+    if (shuffleBtn) shuffleBtn.addEventListener('click', showNext);
+    renderCatButtons();
+
+    const script = document.createElement('script');
+    script.src = 'https://platform.twitter.com/widgets.js';
+    script.async = true;
+    script.onload = () => { widgetsAnnounced = true; showNext(); startShuffle(); };
+    script.onerror = () => { widgetsFailed = true; showNext(); startShuffle(); };
+    document.body.appendChild(script);
+
+    // If the widget script is blocked outright (common with tracker
+    // blockers), onerror won't always fire -- fall back after a timeout.
+    window.setTimeout(() => {
+      if (!widgetsAnnounced && typeof twttr === 'undefined') {
+        widgetsFailed = true;
+        showNext();
+        startShuffle();
+      }
+    }, 4000);
   })();
 </script>
 </body>
