@@ -359,6 +359,26 @@
   .x-fallback-item a:hover { text-decoration: underline; }
   .x-fallback-item .x-topic { color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .03em; margin-bottom: 4px; }
 
+  .x-net-badge {
+    display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: .04em;
+    padding: 1px 6px; border-radius: 4px; margin-right: 6px; vertical-align: middle;
+    text-transform: uppercase;
+  }
+  .x-net-badge.x-net-x    { background: color-mix(in srgb, var(--text-primary) 88%, transparent); color: var(--page-plane); }
+  .x-net-badge.x-net-bsky { background: #1185fe; color: #fff; }
+
+  .x-post-list { display: grid; gap: 8px; padding: 10px 12px; overflow-y: auto; max-height: 380px; }
+  .x-post {
+    display: block; border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px;
+    text-decoration: none; color: inherit; transition: border-color .15s ease, transform .15s ease;
+  }
+  .x-post:hover { border-color: color-mix(in srgb, #1185fe 45%, var(--border)); transform: translateY(-1px); }
+  .x-post-head { display: flex; align-items: baseline; gap: 6px; margin-bottom: 4px; flex-wrap: wrap; }
+  .x-post-author { font-weight: 700; font-size: 13px; color: var(--text-primary); }
+  .x-post-handle { font-size: 12px; color: var(--text-muted); }
+  .x-post-time { font-size: 11px; color: var(--text-muted); margin-left: auto; }
+  .x-post-text { font-size: 13px; color: var(--text-secondary); line-height: 1.5; white-space: pre-wrap; }
+
   .x-note { font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
 </style>
 </head>
@@ -575,15 +595,15 @@
 
     <section class="reveal x-section">
       <div class="x-title-row">
-        <h2 style="margin:0">X / Twitter — Breaking News Signals</h2>
+        <h2 style="margin:0">X &amp; Bluesky — Breaking News Signals</h2>
         <span class="x-badge"><span class="dot"></span>Live feed</span>
       </div>
       <p class="desc">
-        Alongside the RSS wires above, X is where market-moving news breaks first. When a credible voice —
-        a central bank, a head of state, a market-moving CEO or institution — posts something that could
-        swing tech, finance, AI, or trading markets, that's exactly the kind of real-time signal
+        Alongside the RSS wires above, social platforms are where market-moving news breaks first. When a
+        credible voice — a central bank, a head of state, a market-moving CEO or institution — posts something
+        that could swing tech, finance, AI, or trading markets, that's exactly the kind of real-time signal
         <code>ai_strategy.py</code> is meant to weigh before it proposes a trade. Pick a subject below; within
-        its own box this panel keeps shuffling through what credible accounts in that space are posting right now.
+        its own box this panel keeps shuffling between credible accounts on both X and Bluesky in that space.
       </p>
       <div class="x-cats" id="x-cats"></div>
       <div class="x-stage" id="x-stage">
@@ -594,10 +614,12 @@
         <div class="x-embed-wrap" id="x-embed-wrap"></div>
       </div>
       <p class="x-note">
-        Embeds are X's own official public timeline widgets — genuine posts from the accounts shown, no
-        scraping and no API key involved. If a widget can't load (tracker blockers, offline, or the account
-        goes private/suspended), a direct-link list to that subject's accounts appears instead. This panel is
-        a read-only signal source: it never posts, follows, or takes any action on X on the bot's behalf.
+        X posts come from X's own official public timeline widget; Bluesky posts come straight from Bluesky's
+        free, keyless public API (<code>public.api.bsky.app</code>) — both are genuine posts from the accounts
+        shown, no scraping, no login, no API key on either side. If a source can't load (tracker blockers,
+        offline, an X account going private/suspended), a direct-link list to that subject's accounts appears
+        instead. This panel is read-only: it never posts, follows, or takes any action on either platform on
+        the bot's behalf.
       </p>
     </section>
 
@@ -1247,30 +1269,41 @@
     if (configured()) { loadAssets(); startPolling(); }
   })();
 
-  // --- X / Twitter breaking-news signals panel -----------------------------
-  // Purely a read-only "what would the bot's news input look like on X"
-  // panel: official public timeline embeds (platform.twitter.com/widgets.js,
-  // no API key, no scraping) for a curated set of credible accounts --
-  // world leaders/institutions, finance & markets, tech & AI, and trading/
-  // crypto outlets. It auto-shuffles which account's timeline is showing
-  // within its own box, and falls back to a plain link list if the widget
-  // script is blocked (ad/tracker blockers commonly block platform.twitter.com).
+  // --- X & Bluesky breaking-news signals panel ------------------------------
+  // Purely a read-only "what would the bot's news input look like on social"
+  // panel, mixing two sources per category -- world leaders/institutions,
+  // finance & markets, tech & AI, and trading/crypto:
+  //   - x:    X's own official public timeline embed (platform.twitter.com/
+  //           widgets.js) -- no API key, no scraping.
+  //   - bsky: Bluesky's free, keyless, CORS-enabled public AppView
+  //           (public.api.bsky.app) -- also no API key, no scraping, and
+  //           doesn't depend on a third-party widget script at all, so it's
+  //           the more reliable of the two when X's embed is blocked.
+  // Every bsky handle below was checked live against
+  // public.api.bsky.app/xrpc/app.bsky.actor.getProfile to confirm it's a
+  // real, active account before being hardcoded here.
+  // The panel auto-shuffles between both networks within its own box, and
+  // falls back to a plain link list per-source if that source can't load.
   const X_CATEGORIES = [
     {
       id: 'leaders', label: 'World Leaders & Institutions',
-      handles: ['WhiteHouse', 'federalreserve', 'ecb', 'IMFNews', 'POTUS'],
+      x: ['WhiteHouse', 'federalreserve', 'ecb', 'IMFNews', 'POTUS'],
+      bsky: ['federalreserve.gov', 'ecb.europa.eu', 'un.org', 'politico.com'],
     },
     {
       id: 'finance', label: 'Finance & Markets',
-      handles: ['business', 'DeItaone', 'unusual_whales', 'WSJmarkets', 'FirstSquawk'],
+      x: ['business', 'DeItaone', 'unusual_whales', 'WSJmarkets', 'FirstSquawk'],
+      bsky: ['reuters.com', 'bloomberg.com', 'wsj.com', 'forbes.com'],
     },
     {
       id: 'tech-ai', label: 'Tech & AI',
-      handles: ['sama', 'OpenAI', 'sundarpichai', 'satyanadella', 'elonmusk'],
+      x: ['sama', 'OpenAI', 'sundarpichai', 'satyanadella', 'elonmusk'],
+      bsky: ['karpathy.bsky.social', 'simonwillison.net', 'techcrunch.com', 'theinformation.com'],
     },
     {
       id: 'trading', label: 'Trading & Crypto',
-      handles: ['zerohedge', 'CoinDesk', 'Benzinga', 'WatcherGuru'],
+      x: ['zerohedge', 'CoinDesk', 'Benzinga', 'WatcherGuru'],
+      bsky: ['cnbc.com', 'marketwatch.com', 'coindesk.com', 'decrypt.co'],
     },
   ];
 
@@ -1282,6 +1315,7 @@
     if (!catsEl || !embedWrap) return;
 
     let activeCategory = X_CATEGORIES[0];
+    let lastNetwork = null;
     let lastHandle = null;
     let shuffleTimer = null;
     let widgetsFailed = false;
@@ -1296,6 +1330,7 @@
           const cat = X_CATEGORIES.find(c => c.id === btn.dataset.id);
           if (!cat || cat === activeCategory) return;
           activeCategory = cat;
+          lastNetwork = null;
           lastHandle = null;
           renderCatButtons();
           showNext();
@@ -1304,29 +1339,34 @@
       });
     }
 
-    function pickHandle(cat) {
-      const pool = cat.handles.filter(h => h !== lastHandle);
-      const choice = pool[Math.floor(Math.random() * pool.length)] || cat.handles[0];
-      lastHandle = choice;
-      return choice;
+    function pickNext(cat) {
+      let network, handle, attempts = 0;
+      do {
+        network = Math.random() < 0.5 ? 'x' : 'bsky';
+        const pool = cat[network];
+        handle = pool[Math.floor(Math.random() * pool.length)];
+        attempts++;
+      } while (network === lastNetwork && handle === lastHandle && attempts < 6);
+      lastNetwork = network;
+      lastHandle = handle;
+      return { network, handle };
     }
 
-    function renderFallback(cat, handle) {
+    function renderFallback(cat, handle, network) {
       embedWrap.classList.remove('is-loading');
-      embedWrap.innerHTML = `<div class="x-fallback-list">${cat.handles.map(h => `
+      const label = network === 'bsky' ? 'Bluesky' : 'X';
+      const baseUrl = network === 'bsky' ? 'https://bsky.app/profile/' : 'https://x.com/';
+      const pool = network === 'bsky' ? cat.bsky : cat.x;
+      embedWrap.innerHTML = `<div class="x-fallback-list">${pool.map(h => `
         <div class="x-fallback-item">
-          <div class="x-topic">${escapeHtml(cat.label)}${h === handle ? ' · shuffled to this one' : ''}</div>
-          <a href="https://x.com/${encodeURIComponent(h)}" target="_blank" rel="noopener">@${escapeHtml(h)} →</a>
+          <div class="x-topic">${escapeHtml(cat.label)} · ${label}${h === handle ? ' · shuffled to this one' : ''}</div>
+          <a href="${baseUrl}${encodeURIComponent(h)}" target="_blank" rel="noopener">@${escapeHtml(h)} →</a>
         </div>`).join('')}</div>`;
     }
 
-    function showNext() {
-      const cat = activeCategory;
-      const handle = pickHandle(cat);
-      stageHandleEl.textContent = '@' + handle;
-
+    function loadX(cat, handle) {
       if (widgetsFailed || typeof twttr === 'undefined' || !twttr.widgets) {
-        renderFallback(cat, handle);
+        renderFallback(cat, handle, 'x');
         return;
       }
       embedWrap.classList.add('is-loading');
@@ -1336,11 +1376,55 @@
         { height: 380, chrome: 'noheader nofooter noborders transparent', theme: currentIsDark() ? 'dark' : 'light' }
       ).then(el => {
         embedWrap.classList.remove('is-loading');
-        if (!el) renderFallback(cat, handle);
+        if (!el) renderFallback(cat, handle, 'x');
       }).catch(() => {
         embedWrap.classList.remove('is-loading');
-        renderFallback(cat, handle);
+        renderFallback(cat, handle, 'x');
       });
+    }
+
+    function renderBskyPost(post) {
+      const rkey = (post.uri || '').split('/').pop();
+      const link = `https://bsky.app/profile/${encodeURIComponent(post.author.handle)}/post/${encodeURIComponent(rkey)}`;
+      const text = (post.record && post.record.text) || '';
+      const when = post.record && post.record.createdAt ? new Date(post.record.createdAt) : null;
+      const whenStr = when ? when.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      return `
+        <a class="x-post" href="${escapeHtml(link)}" target="_blank" rel="noopener">
+          <div class="x-post-head">
+            <span class="x-post-author">${escapeHtml(post.author.displayName || post.author.handle)}</span>
+            <span class="x-post-handle">@${escapeHtml(post.author.handle)}</span>
+            <span class="x-post-time">${escapeHtml(whenStr)}</span>
+          </div>
+          <div class="x-post-text">${escapeHtml(text)}</div>
+        </a>`;
+    }
+
+    async function loadBsky(cat, handle) {
+      embedWrap.classList.add('is-loading');
+      try {
+        const resp = await fetch(`https://public.api.bsky.app/xrpc/app.bsky.feed.getAuthorFeed?actor=${encodeURIComponent(handle)}&limit=8&filter=posts_no_replies`);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const posts = (data.feed || []).map(item => item.post).filter(p => p && p.record && p.record.text);
+        if (!posts.length) throw new Error('no posts');
+        embedWrap.innerHTML = `<div class="x-post-list">${posts.slice(0, 6).map(renderBskyPost).join('')}</div>`;
+      } catch (err) {
+        renderFallback(cat, handle, 'bsky');
+      } finally {
+        embedWrap.classList.remove('is-loading');
+      }
+    }
+
+    function showNext() {
+      const cat = activeCategory;
+      const { network, handle } = pickNext(cat);
+      const badgeCls = network === 'bsky' ? 'x-net-bsky' : 'x-net-x';
+      const badgeLabel = network === 'bsky' ? 'Bluesky' : 'X';
+      stageHandleEl.innerHTML = `<span class="x-net-badge ${badgeCls}">${badgeLabel}</span>@${escapeHtml(handle)}`;
+
+      if (network === 'bsky') loadBsky(cat, handle);
+      else loadX(cat, handle);
     }
 
     function startShuffle() {
@@ -1350,23 +1434,26 @@
 
     if (shuffleBtn) shuffleBtn.addEventListener('click', showNext);
     renderCatButtons();
+    showNext();
+    startShuffle();
 
+    // X's widget script loads in the background -- Bluesky needs no such
+    // script, so the panel doesn't wait on this before showing something.
     const script = document.createElement('script');
     script.src = 'https://platform.twitter.com/widgets.js';
     script.async = true;
-    script.onload = () => { widgetsAnnounced = true; showNext(); startShuffle(); };
-    script.onerror = () => { widgetsFailed = true; showNext(); startShuffle(); };
+    script.onload = () => {
+      widgetsAnnounced = true;
+      if (lastNetwork === 'x') loadX(activeCategory, lastHandle); // upgrade an X fallback shown before the script was ready
+    };
+    script.onerror = () => { widgetsFailed = true; };
     document.body.appendChild(script);
 
     // If the widget script is blocked outright (common with tracker
-    // blockers), onerror won't always fire -- fall back after a timeout.
+    // blockers), onerror won't always fire -- treat it as failed after a timeout.
     window.setTimeout(() => {
-      if (!widgetsAnnounced && typeof twttr === 'undefined') {
-        widgetsFailed = true;
-        showNext();
-        startShuffle();
-      }
-    }, 4000);
+      if (!widgetsAnnounced && typeof twttr === 'undefined') widgetsFailed = true;
+    }, 6000);
   })();
 </script>
 </body>
