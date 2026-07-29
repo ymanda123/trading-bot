@@ -253,6 +253,11 @@
   .balance-trend.trend-up   { color: var(--status-good); animation: trend-flash 0.85s ease-in-out 5; }
   .balance-trend.trend-down { color: var(--status-critical); animation: trend-flash 0.85s ease-in-out 5; }
   @keyframes trend-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+  /* Standing (non-flashing) warning once balance is more than halfway to
+     the circuit breaker floor -- distinct from the transient up/down flash
+     above, and takes priority over it while active. */
+  .tile-balance .value.balance-danger { color: var(--status-critical); }
+  .balance-trend.trend-danger { color: var(--status-critical); opacity: 1; animation: none; }
   .balance-actions-btn {
     position: absolute; top: 10px; right: 10px; z-index: 2;
     width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border);
@@ -1637,6 +1642,83 @@
     return out;
   }
 
+  // Populated by load() below; read by initControlPanel()'s pollStatus (same
+  // top-level script scope) to know which candle to flash blue when the bot
+  // actually opens a real position, and to skip the flash entirely if the
+  // chart is currently showing a different symbol than the one trading.
+  let lastLoadedCandles = null;
+  let lastLoadedSymbol = null;
+  let lastLoadedBaseShapes = null; // the RSI 70/30 lines, so the flash can be added/removed without clobbering them
+  let lastLoadedPriceRange = null; // whole-chart high-low span, so the flash box is sized against the visible chart, not just one candle's often-tiny range
+  let tradeFlashTimer = null;
+
+  // Blue glowing outline on the most recent candle, pulsing for ~6s then
+  // clearing -- fired the moment the bot's /status shows a brand-new open
+  // position (see initControlPanel). sizeTier is 0/1/2 for the 100%/50%/25%
+  // position-sizing tiers (risk_manager.py's POSITION_SIZING_TIERS), used
+  // here to scale how bold the flash looks -- a full-size trade risking the
+  // whole balance should read as a bigger deal than a 25%-sized one.
+  function flashTradeOnChart(symbol, sizeTier) {
+    if (!lastLoadedCandles || !lastLoadedCandles.length || symbol !== lastLoadedSymbol) return;
+    const chartEl = document.getElementById('chart');
+    if (!chartEl || !chartEl.layout) return;
+
+    const candle = lastLoadedCandles[lastLoadedCandles.length - 1];
+    const prev = lastLoadedCandles[lastLoadedCandles.length - 2];
+    // Widened to ~2.8x one candle's width and padded against the *whole
+    // chart's* visible price range (not just this candle's own often-tiny
+    // high/low span) -- a single 15m candle's range can be a sliver of the
+    // chart at this zoom level, so sizing padding off it alone made the box
+    // nearly invisible next to the existing blue "live" pulse dot.
+    const halfBarMs = prev ? (candle.time - prev.time) / 2 : 5 * 60 * 1000;
+    const xPad = halfBarMs * 1.4;
+    const range = lastLoadedPriceRange || (candle.high - candle.low) || candle.close * 0.01;
+    const pad = range * 0.035;
+
+    const styles = getComputedStyle(document.getElementById('viz-root'));
+    const flashColor = styles.getPropertyValue('--series-1').trim();
+    const widthByTier = [7, 5.5, 4]; // 100% / 50% / 25% size tiers
+    const width = widthByTier[Math.min(sizeTier, 2)] || 4;
+
+    // Fixed-low-alpha fill (via rgba, not the shape's own `opacity`) so the
+    // candle's own green/red color stays visible through it -- only the
+    // border pulses boldly via the shape-level `opacity` below, which would
+    // otherwise scale the fill down to nothing on every "off" tick too.
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(flashColor);
+    const fillRgba = m
+      ? `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, 0.18)`
+      : flashColor;
+
+    const flashShape = {
+      type: 'rect',
+      xref: 'x', x0: new Date(candle.time.getTime() - xPad), x1: new Date(candle.time.getTime() + xPad),
+      yref: 'y', y0: candle.low - pad, y1: candle.high + pad,
+      line: { color: flashColor, width },
+      fillcolor: fillRgba, opacity: 1,
+      // Plotly shapes default to layer:'below', drawn *behind* data traces --
+      // without this, the box render hidden behind the candlestick itself
+      // instead of glowing around/over it.
+      layer: 'above',
+    };
+
+    if (tradeFlashTimer) { clearInterval(tradeFlashTimer); tradeFlashTimer = null; }
+    const baseShapes = lastLoadedBaseShapes || [];
+    let on = true;
+    let ticks = 0;
+    Plotly.relayout('chart', { shapes: [...baseShapes, flashShape] }).catch(() => {});
+    tradeFlashTimer = setInterval(() => {
+      ticks += 1;
+      if (ticks >= 14) { // ~6s at 425ms/tick
+        clearInterval(tradeFlashTimer);
+        tradeFlashTimer = null;
+        Plotly.relayout('chart', { shapes: baseShapes }).catch(() => {});
+        return;
+      }
+      on = !on;
+      Plotly.relayout('chart', { 'shapes[2].opacity': on ? 1 : 0.12, 'shapes[2].line.width': on ? width : Math.max(width - 2, 2) }).catch(() => {});
+    }, 425);
+  }
+
   function sma(values, period) {
     const out = new Array(values.length).fill(null);
     for (let i = period - 1; i < values.length; i++) {
@@ -1803,6 +1885,9 @@
       : "Live market data via the configured backend's Yahoo Finance proxy, with the bot's fast(10)/slow(30) moving averages, 20-bar support/resistance, and 14-period RSI overlaid.";
     try {
       const { candles, source } = await fetchCandlesForAsset(asset);
+      lastLoadedCandles = candles;
+      lastLoadedSymbol = asset.symbol;
+      lastLoadedPriceRange = Math.max(...candles.map(c => c.high)) - Math.min(...candles.map(c => c.low));
       const closes = candles.map(c => c.close);
       const fastMa = sma(closes, FAST_MA);
       const slowMa = sma(closes, SLOW_MA);
@@ -1879,6 +1964,12 @@
         name: 'Live', hoverinfo: 'skip', showlegend: false,
       };
 
+      lastLoadedBaseShapes = [
+        { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 70, y1: 70, line: { color: gridline, width: 1, dash: 'dot' } },
+        { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 30, y1: 30, line: { color: gridline, width: 1, dash: 'dot' } },
+      ];
+      if (tradeFlashTimer) { clearInterval(tradeFlashTimer); tradeFlashTimer = null; } // full reload cancels any in-flight flash
+
       Plotly.newPlot('chart', [candleTrace, fastTrace, slowTrace, supportTrace, resistanceTrace, rsiTrace, liveMarkerTrace], {
         paper_bgcolor: surface, plot_bgcolor: surface,
         font: { color: textSecondary, family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 12 },
@@ -1886,10 +1977,7 @@
         xaxis: { rangeslider: { visible: false }, gridcolor: gridline, showline: false },
         yaxis: { domain: [0.32, 1], gridcolor: gridline, showline: false, title: asset.kind === 'crypto' ? 'USDT' : 'Price' },
         yaxis2: { domain: [0, 0.22], gridcolor: gridline, showline: false, title: 'RSI', range: [0, 100] },
-        shapes: [
-          { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 70, y1: 70, line: { color: gridline, width: 1, dash: 'dot' } },
-          { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 30, y1: 30, line: { color: gridline, width: 1, dash: 'dot' } },
-        ],
+        shapes: lastLoadedBaseShapes,
         legend: { orientation: 'h', y: 1.08 },
       }, { displayModeBar: false, responsive: true }).then(() => startLiveMarkerPulse(6));
 
@@ -2132,6 +2220,7 @@
     const bpMsg = document.getElementById('bp-msg');
     let lastKnownBalance = null;
     let balanceGlowTimer = null;
+    let hadOpenPosition = false; // tracks position null->non-null to catch the exact moment a trade opens
 
     function flashBalanceTrend(direction) {
       balanceTrendEl.hidden = false;
@@ -2151,17 +2240,43 @@
       }, 6000);
     }
 
+    // config.py's Config.INITIAL_BALANCE -- fixed regardless of deposits/
+    // withdrawals, used only to define where the "danger zone" starts.
+    const INITIAL_BALANCE_REF = 200;
+    let lastKnownFloor = null;
+
     function updateBalanceTile(balance, circuitBreakerFloor) {
-      if (typeof balance === 'number') {
-        balanceValueEl.textContent = '$' + balance.toFixed(2);
+      if (typeof circuitBreakerFloor === 'number') {
+        circuitBreakerFloorEl.textContent = '$' + circuitBreakerFloor.toFixed(2);
+        lastKnownFloor = circuitBreakerFloor;
+      }
+
+      if (typeof balance !== 'number') return;
+      balanceValueEl.textContent = '$' + balance.toFixed(2);
+
+      // Standing warning once balance has burned through more than half the
+      // distance between the starting balance and the circuit breaker floor
+      // -- recomputed against the *current* floor, so raising it via "Add to
+      // Circuit Breaker" correctly moves this threshold up too.
+      const floor = lastKnownFloor;
+      const inDanger = typeof floor === 'number' && balance < floor + (INITIAL_BALANCE_REF - floor) / 2;
+      balanceValueEl.classList.toggle('balance-danger', inDanger);
+
+      if (inDanger) {
+        balanceTrendEl.hidden = false;
+        balanceTrendEl.classList.remove('trend-up', 'trend-down');
+        balanceTrendEl.classList.add('trend-danger');
+        balanceTrendEl.textContent = '▼ Bearish';
+      } else {
+        if (balanceTrendEl.classList.contains('trend-danger')) {
+          balanceTrendEl.classList.remove('trend-danger');
+          balanceTrendEl.hidden = true;
+        }
         if (lastKnownBalance !== null && balance !== lastKnownBalance) {
           flashBalanceTrend(balance > lastKnownBalance ? 'up' : 'down');
         }
-        lastKnownBalance = balance;
       }
-      if (typeof circuitBreakerFloor === 'number') {
-        circuitBreakerFloorEl.textContent = '$' + circuitBreakerFloor.toFixed(2);
-      }
+      lastKnownBalance = balance;
     }
 
     balanceActionsBtn.addEventListener('click', (e) => {
@@ -2328,6 +2443,18 @@
 
         activityPanel.hidden = false;
         updateBalanceTile(data.balance, data.circuit_breaker_floor);
+
+        // A position appearing where there wasn't one is the exact moment
+        // the bot opened a real trade -- flash the chart candle it happened
+        // on. Sizing tier (100%/50%/25%) comes from the consecutive-loss
+        // count, which only changes on a trade *close*, so its value right
+        // now still reflects whatever tier was used to size this open trade.
+        const hasOpenPosition = Boolean(data.position);
+        if (hasOpenPosition && !hadOpenPosition && data.symbol) {
+          const sizeTier = Math.min(data.consecutive_losses ?? 0, 2);
+          flashTradeOnChart(data.symbol, sizeTier);
+        }
+        hadOpenPosition = hasOpenPosition;
 
         if (typeof data.net_pnl === 'number') {
           const sign = data.net_pnl > 0 ? '+' : '';
