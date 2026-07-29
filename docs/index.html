@@ -819,7 +819,7 @@
 
     <section class="reveal">
       <h2>Live News Feed</h2>
-      <p class="desc">Headlines from CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and the Financial Times — the same sources the AI reads each cycle before proposing a strategy. Click a headline to read the full article on the source's own site.</p>
+      <p class="desc" id="news-desc">Headlines from CNBC, Yahoo Finance, Bloomberg, WSJ, the NYT, and the Financial Times — the same sources the AI reads each cycle before proposing a strategy. Click a headline to read the full article on the source's own site.</p>
       <div id="news-filters" class="news-filters"></div>
       <div id="news-list" class="news-list">
         <p class="control-hint">Loading live news…</p>
@@ -1000,6 +1000,86 @@
     asx:      { symbol: 'BHP.AX',      label: 'BHP Group (BHP.AX)' },
     crypto:   { symbol: 'BTC/USDT',    label: 'Bitcoin (BTC/USDT)' },
   };
+
+  // Local-language news + live TV per country market, applied only via the
+  // market-switch overlay below (not the plain chart/asset pickers). nyse
+  // (USA) and crypto aren't here on purpose -- they mean "back to the
+  // page's normal defaults" (see resetToDefaultLocalSources). Every RSS
+  // feed and YouTube video ID here was verified live (real fetch through
+  // the same rss2json proxy the news panel actually uses, and a confirmed
+  // isLiveNow:true check on the video) before being hardcoded.
+  //
+  // jse and hkex have no reliably-live 24/7 channel (checked several
+  // candidates for each, all intermittently live at best) so their tv uses
+  // channel: auto-resolve instead of a pinned video -- same as CNBC
+  // already does elsewhere on this page, including the same "nothing live
+  // right now" fallback copy.
+  const COUNTRY_LOCAL_SOURCES = {
+    tsx: {
+      news: { source: 'CBC News', url: 'https://www.cbc.ca/webfeed/rss/rss-canada' },
+      tv: { value: 'video:5vfaDsMhCF4', channel: 'UCuFFtHWoLl5fauMMD5Ww2jA', label: 'CBC News' },
+    },
+    lse: {
+      news: { source: 'BBC News', url: 'https://feeds.bbci.co.uk/news/uk/rss.xml' },
+      tv: { value: 'video:YDvsBbKfLPA', channel: 'UCoMdktPbSTixAyNGwb-UYkQ', label: 'Sky News' },
+    },
+    euronext: {
+      news: { source: 'Le Monde', url: 'https://www.lemonde.fr/rss/une.xml' },
+      tv: { value: 'video:a47ckXKZjxI', channel: 'UCCCPCZNChQdGa9EkATeye4g', label: 'FRANCE 24' },
+    },
+    xetra: {
+      news: { source: 'DER SPIEGEL', url: 'https://www.spiegel.de/schlagzeilen/index.rss' },
+      tv: { value: 'video:Ru-osM-vNZs', channel: 'UCZMsvbAhhRblVGXmEXW8TSA', label: 'WELT' },
+    },
+    jse: {
+      news: { source: 'SABC News', url: 'https://www.sabcnews.com/sabcnews/feed/' },
+      tv: { value: 'channel:UC8yH-uI81UUtEMDsowQyx1g', channel: 'UC8yH-uI81UUtEMDsowQyx1g', label: 'SABC News' },
+    },
+    nse: {
+      news: { source: 'The Hindu', url: 'https://www.thehindu.com/news/national/feeder/default.rss' },
+      tv: { value: 'video:6NILBpLZjzo', channel: 'UCZFMm1mMw0F81Z37aaEzTUA', label: 'NDTV' },
+    },
+    hkex: {
+      news: { source: 'RTHK', url: 'https://rthk9.rthk.hk/rthk/news/rss/c_expressnews_clocal.xml' },
+      tv: { value: 'channel:UCwuTCNZqSMfaiP63cGDb8LQ', channel: 'UCwuTCNZqSMfaiP63cGDb8LQ', label: 'RTHK News' },
+    },
+    sse: {
+      news: { source: 'Google News (China)', url: 'https://news.google.com/rss?hl=zh-CN&gl=CN&ceid=CN:zh-Hans' },
+      tv: { value: 'video:Ry--eMIjYLQ', channel: 'UC4vnLYInDvXtLKGOZieMeMw', label: '鳳凰衛視 Phoenix TV' },
+    },
+    tse: {
+      news: { source: 'NHK', url: 'https://www3.nhk.or.jp/rss/news/cat0.xml' },
+      tv: { value: 'video:BdWdT9mlPc0', channel: 'UCGCZAYq5Xxojl_tSXcVJhiQ', label: 'ANNnewsCH' },
+    },
+    asx: {
+      news: { source: 'ABC News', url: 'https://www.abc.net.au/news/feed/51120/rss.xml' },
+      tv: { value: 'video:vOTiJkg1voo', channel: 'UCVgO39Bk5sMo66-6o6Spn6Q', label: 'ABC News Australia' },
+    },
+  };
+
+  let activeCountryMarketId = null; // null = default (US) sources; set only via the market-switch overlay
+  const DEFAULT_NEWS_DESC = document.getElementById('news-desc').textContent;
+
+  function resetToDefaultLocalSources() {
+    activeCountryMarketId = null;
+    document.getElementById('news-desc').textContent = DEFAULT_NEWS_DESC;
+    const videoSelect = document.getElementById('video-select');
+    if (videoSelect && videoSelect.options.length) {
+      videoSelect.value = videoSelect.options[0].value; // the page's default (Bloomberg Television)
+      applyVideoSelection(videoSelect);
+    }
+    refreshNews();
+  }
+
+  function applyCountryLocalSources(marketId) {
+    const country = COUNTRY_LOCAL_SOURCES[marketId];
+    if (!country) { resetToDefaultLocalSources(); return; }
+    activeCountryMarketId = marketId;
+    document.getElementById('news-desc').textContent =
+      `Showing ${country.news.source}'s local feed for this market. Switch to the USA or crypto market to go back to the default multi-source feed.`;
+    applyCountryVideoSelection(country.tv, marketId);
+    refreshNews();
+  }
 
   function getTzParts(date, tz) {
     const fmt = new Intl.DateTimeFormat('en-US', {
@@ -1188,10 +1268,21 @@
       load(); // this market's asset is always one of CHART_ASSETS, so no need to add an option here
     }
 
+    // Only this flow (a world-clock market click, confirmed through this
+    // overlay) switches News/Live TV to a local source -- the plain chart
+    // asset picker never touches them.
+    const country = COUNTRY_LOCAL_SOURCES[mswCurrentMarketId];
+    if (country) applyCountryLocalSources(mswCurrentMarketId);
+    else resetToDefaultLocalSources();
+
     const backendConfigured = Boolean(localStorage.getItem('tb_backend_url') && localStorage.getItem('tb_control_token'));
-    document.getElementById('msw-done-text').textContent = backendConfigured
-      ? `${asset.label} is now selected in Live Trading and on the chart above. Flip the switch when you're ready — nothing starts automatically.`
+    const tradingNote = backendConfigured
+      ? `${asset.label} is now selected in Live Trading and on the chart above.`
       : `${asset.label} is now selected in Live Trading and on the chart above. You'll still need to configure a backend (the Configure button up there) before you can actually start trading it.`;
+    const localNote = country
+      ? ` News and Live Market TV below switched to ${country.news.source} / ${country.tv.label}.`
+      : ' News and Live Market TV below are back to the default US sources.';
+    document.getElementById('msw-done-text').textContent = tradingNote + localNote;
     mswShowStep('done');
   }
 
@@ -1266,6 +1357,22 @@
       select.appendChild(option);
     }
     select.value = symbol;
+  }
+
+  function applyCountryVideoSelection(tv, marketId) {
+    const select = document.getElementById('video-select');
+    if (!select) return;
+    let option = [...select.options].find(o => o.value === tv.value);
+    if (!option) {
+      option = document.createElement('option');
+      option.value = tv.value;
+      option.textContent = tv.label;
+      option.dataset.channel = tv.channel;
+      option.dataset.network = marketId; // lets refreshLiveTvPins() keep this one fresh too, once a backend is configured
+      select.appendChild(option);
+    }
+    select.value = tv.value;
+    applyVideoSelection(select);
   }
 
   function rollingMin(values, period) {
@@ -1640,6 +1747,21 @@
   }
 
   async function refreshNews() {
+    const countrySources = activeCountryMarketId && COUNTRY_LOCAL_SOURCES[activeCountryMarketId];
+    if (countrySources) {
+      // Local-country mode (set only via the market-switch overlay): one
+      // verified local-language feed, fetched the same client-side way as
+      // the default feeds -- bypasses the backend entirely, since
+      // server.py's /news always returns the fixed default US sources.
+      try {
+        renderNews(await fetchFeedViaProxy({ source: countrySources.news.source, url: countrySources.news.url, filterKeywords: false }));
+      } catch (err) {
+        document.getElementById('news-list').innerHTML =
+          `<p class="control-hint">Could not load ${escapeHtml(countrySources.news.source)}: ${escapeHtml(err.message)}</p>`;
+      }
+      return;
+    }
+
     const backendUrl = localStorage.getItem('tb_backend_url') || '';
     if (backendUrl) {
       try {

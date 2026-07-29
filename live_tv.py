@@ -39,6 +39,22 @@ NETWORKS = {
     "cnbc":      {"label": "CNBC Television",       "channel_id": "UCrp_UI8XtuYfpiqluWLD7Lw", "fallback_video_id": None},
     "nbc":       {"label": "NBC News",              "channel_id": "UCeY0bbntWzzVIaj2z3QigXg", "fallback_video_id": "TQkfLoqeI2M"},
     "cnn":       {"label": "CNN",                   "channel_id": "UCupvZG-5ko_eiXAupbDfxWw", "fallback_video_id": "GotlA1KKWoo"},
+    # Per-country local-language channels, applied by the dashboard's
+    # world-clock market-switch flow (docs/index.html's
+    # COUNTRY_LOCAL_SOURCES, which these keys match 1:1). jse and hkex have
+    # no fallback: neither SABC News nor RTHK News had a reliably-live 24/7
+    # stream when checked (several candidate channels tried for each), so
+    # they're channel:-only, same as cnbc above.
+    "tsx":       {"label": "CBC News",              "channel_id": "UCuFFtHWoLl5fauMMD5Ww2jA", "fallback_video_id": "5vfaDsMhCF4"},
+    "lse":       {"label": "Sky News",               "channel_id": "UCoMdktPbSTixAyNGwb-UYkQ", "fallback_video_id": "YDvsBbKfLPA"},
+    "euronext":  {"label": "FRANCE 24",              "channel_id": "UCCCPCZNChQdGa9EkATeye4g", "fallback_video_id": "a47ckXKZjxI"},
+    "xetra":     {"label": "WELT",                   "channel_id": "UCZMsvbAhhRblVGXmEXW8TSA", "fallback_video_id": "Ru-osM-vNZs"},
+    "jse":       {"label": "SABC News",              "channel_id": "UC8yH-uI81UUtEMDsowQyx1g", "fallback_video_id": None},
+    "nse":       {"label": "NDTV",                   "channel_id": "UCZFMm1mMw0F81Z37aaEzTUA", "fallback_video_id": "6NILBpLZjzo"},
+    "hkex":      {"label": "RTHK News",              "channel_id": "UCwuTCNZqSMfaiP63cGDb8LQ", "fallback_video_id": None},
+    "sse":       {"label": "Phoenix TV",             "channel_id": "UC4vnLYInDvXtLKGOZieMeMw", "fallback_video_id": "Ry--eMIjYLQ"},
+    "tse":       {"label": "ANNnewsCH",              "channel_id": "UCGCZAYq5Xxojl_tSXcVJhiQ", "fallback_video_id": "BdWdT9mlPc0"},
+    "asx":       {"label": "ABC News Australia",     "channel_id": "UCVgO39Bk5sMo66-6o6Spn6Q", "fallback_video_id": "vOTiJkg1voo"},
 }
 
 _VIDEO_ID_RE = re.compile(r'"videoId":"([^"]+)"')
