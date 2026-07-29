@@ -17,6 +17,7 @@ can't flip the switch. /status, /assets, /news, and /candles are read-only
 and unauthenticated.
 """
 
+import json
 import logging
 import os
 import threading
@@ -77,6 +78,58 @@ def _chat_rate_limited(ip: str) -> bool:
         return False
 
 
+# --- Persisted "should be running" intent -----------------------------------
+# The trade loop only lives in memory, so a process restart -- a redeploy, or
+# (on Render's free tier) the whole service spinning down after ~15 minutes
+# of no incoming HTTP traffic -- silently drops back to stopped even though
+# nobody clicked Stop. Persisting the user's actual intent to disk and
+# replaying it on boot means a restart resumes instead of going quiet; see
+# _auto_resume() below, called once at import time. This is best-effort, not
+# a guarantee -- it survives the process restarting on the same disk, but a
+# fresh container from a new deploy may not keep this file. Combined with
+# the keep-alive workflow (.github/workflows/keep-alive.yml) that pings
+# /status every 10 minutes to stop the free-tier spin-down from ever
+# triggering, the common case (idle timeout) is fully covered; only an
+# actual code deploy still requires manually turning it back on.
+_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".bot_state.json")
+
+
+def _save_desired_state(running: bool, symbol: str | None = None) -> None:
+    try:
+        with open(_STATE_FILE, "w") as f:
+            json.dump({"running": running, "symbol": symbol}, f)
+    except Exception:
+        logger.exception("Failed to persist desired bot state (non-fatal)")
+
+
+def _load_desired_state() -> dict:
+    try:
+        with open(_STATE_FILE) as f:
+            return json.load(f)
+    except Exception:
+        return {"running": False, "symbol": None}
+
+
+def _auto_resume() -> None:
+    """Called once at import time. If the last known intent (before whatever
+    restarted this process) was "running", resume automatically instead of
+    silently sitting stopped until someone notices and flips the toggle."""
+    global _bot, _loop_thread
+    state = _load_desired_state()
+    if not state.get("running"):
+        return
+
+    symbol = state.get("symbol")
+    with _state_lock:
+        if symbol and symbol in Config.SUPPORTED_ASSETS:
+            Config.SYMBOL = symbol
+        _bot = TradingBot()
+        _running.set()
+        _loop_thread = threading.Thread(target=_run_loop, daemon=True)
+        _loop_thread.start()
+    logger.info("Auto-resumed trading loop on %s from persisted state", Config.SYMBOL)
+
+
 def _run_loop():
     logger.info("Trade loop starting")
     while _running.is_set():
@@ -125,6 +178,7 @@ def start():
         _running.set()
         _loop_thread = threading.Thread(target=_run_loop, daemon=True)
         _loop_thread.start()
+        _save_desired_state(True, _bot.config.SYMBOL)
     return jsonify(status="started", symbol=_bot.config.SYMBOL)
 
 
@@ -135,6 +189,7 @@ def stop():
 
     with _state_lock:
         _running.clear()
+        _save_desired_state(False)
     return jsonify(status="stopped")
 
 
@@ -374,6 +429,11 @@ def candles():
         for row in df.itertuples()
     ])
 
+
+# Runs at import time -- under gunicorn (production) the module is imported,
+# never executed as __main__, so this has to live here rather than inside
+# the block below to actually take effect on Render.
+_auto_resume()
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
