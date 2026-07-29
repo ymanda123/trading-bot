@@ -3,8 +3,9 @@
 toggle the live trade loop on and off, and see what it's doing. Also exposes
 /account/deposit, /account/withdraw, and /account/circuit-breaker for the
 dashboard's balance-tile popover -- demo-only manual controls to add/remove
-paper capital or raise the circuit breaker's halt floor, separate from the
-bot's actual trading logic.
+paper capital or raise the circuit breaker's halt floor -- and
+/predictions/place for the "Predict" popup's up/down/~exact price wager.
+None of this is the bot's own trading logic.
 
 Runs the bot loop on a background thread inside this process. Note that
 bot.py's TradingBot only *simulates* fills against live prices -- it never
@@ -15,10 +16,10 @@ Config.SUPPORTED_ASSETS to trade; switching symbols always starts a fresh
 bot (balance/streaks reset) since carrying state across markets wouldn't
 mean anything.
 
-/start, /stop, and /account/* require a shared control token (CONTROL_TOKEN
-env var) sent via the X-Control-Token header, so a stranger with the
-dashboard URL can't flip the switch or touch the balance. /status, /assets,
-/news, and /candles are read-only and unauthenticated.
+/start, /stop, /account/*, and /predictions/place require a shared control
+token (CONTROL_TOKEN env var) sent via the X-Control-Token header, so a
+stranger with the dashboard URL can't flip the switch or touch the balance.
+/status, /assets, /news, and /candles are read-only and unauthenticated.
 """
 
 import json
@@ -284,6 +285,61 @@ def account_raise_circuit_breaker():
     return jsonify(status="ok", circuit_breaker_floor=round(floor, 2))
 
 
+@app.post("/predictions/place")
+def place_prediction():
+    """Dashboard's "Predict" popup (next to the Live Trading toggle, or the
+    balance popover's last option) -- a wager on whether the current asset's
+    price will be up/down/~exact by a chosen time. Not part of the bot's own
+    trading logic. Fetches the current price server-side (never trusts a
+    client-supplied one) and hands it to RiskManager.place_prediction, which
+    deducts the wager immediately. Resolution happens lazily -- see /status
+    below -- once target_time has passed. Control-token gated like
+    /account/* since it mutates the balance."""
+    if not _authorized(request):
+        return jsonify(error="unauthorized"), 401
+
+    body = request.get_json(silent=True) or {}
+    direction = body.get("direction")
+    wager = body.get("wager")
+    duration_seconds = body.get("duration_seconds")
+    if not isinstance(wager, (int, float)) or isinstance(wager, bool):
+        return jsonify(error="wager must be a number"), 400
+    if not isinstance(duration_seconds, (int, float)) or isinstance(duration_seconds, bool):
+        return jsonify(error="duration_seconds must be a number"), 400
+
+    global _bot
+    with _state_lock:
+        if _bot is None:
+            _bot = TradingBot()
+        bot = _bot
+
+    try:
+        df = fetch_ohlcv_df(bot.exchange, bot.config)
+        price = float(df["close"].iloc[-1])
+    except Exception:
+        logger.exception("Price fetch failed for prediction placement")
+        return jsonify(error="failed to fetch the current price -- try again"), 502
+
+    with _state_lock:
+        try:
+            pred = bot.risk_manager.place_prediction(direction, float(wager), price, float(duration_seconds))
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        balance = bot.risk_manager.balance
+
+    return jsonify(
+        status="ok",
+        balance=round(balance, 2),
+        prediction={
+            "symbol": bot.config.SYMBOL,
+            "direction": pred.direction,
+            "wager": round(pred.wager, 2),
+            "price_at_bet": round(pred.price_at_bet, 2),
+            "target_time": pred.target_time,
+        },
+    )
+
+
 @app.post("/debug/force-trade")
 def force_trade():
     """TEMPORARY, test-only -- opens one real paper position immediately
@@ -346,6 +402,32 @@ def status():
         return jsonify(running=False, thinking=False, balance=None, symbol=Config.SYMBOL)
 
     rm = bot.risk_manager
+
+    # Predictions resolve lazily -- whenever anything polls /status after the
+    # target time has passed, rather than needing a dedicated scheduler/
+    # background thread. Fails safe: a fetch error just means it's retried
+    # on the next poll instead of leaving the prediction stuck unresolved.
+    if rm.prediction_due():
+        try:
+            df = fetch_ohlcv_df(bot.exchange, bot.config)
+            with _state_lock:
+                rm.resolve_prediction(float(df["close"].iloc[-1]))
+        except Exception:
+            logger.exception("Prediction resolution failed; will retry next poll")
+
+    pending_prediction = None
+    if rm.pending_prediction:
+        pred = rm.pending_prediction
+        pending_prediction = {
+            "direction": pred.direction,
+            "wager": round(pred.wager, 2),
+            "price_at_bet": round(pred.price_at_bet, 2),
+            "target_time": pred.target_time,
+            "resolved": pred.resolved,
+            "outcome": pred.outcome,
+            "resolution_price": round(pred.resolution_price, 2) if pred.resolution_price is not None else None,
+        }
+
     size_pct, atr_stop_multiple = rm.get_position_sizing()
 
     position = None
@@ -379,6 +461,7 @@ def status():
         current_strategy=bot.last_decision.strategy_type if bot.last_decision else None,
         current_reason=bot.last_decision.reason if bot.last_decision else None,
         position=position,
+        pending_prediction=pending_prediction,
         trade_count=len(bot.trade_log),
         last_trade=last_trade,
         recent_trades=recent_trades,

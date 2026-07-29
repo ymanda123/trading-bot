@@ -612,6 +612,59 @@
   .msw-btn-primary { background: linear-gradient(100deg, var(--series-1), var(--accent-gold)); color: #fff; border-color: transparent; }
   .msw-btn-primary:hover { filter: brightness(1.08); }
 
+  /* --- Predict button + popup (price-prediction mini-game) ------------------ */
+  .predict-btn {
+    margin-left: 4px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--page-plane); color: var(--text-primary);
+    font: inherit; font-size: 12.5px; font-weight: 600; padding: 7px 12px; cursor: pointer;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .predict-btn:hover:not(:disabled) { border-color: var(--series-1); color: var(--series-1); }
+  .predict-btn:disabled { opacity: .5; cursor: default; }
+  .predict-card { text-align: left; }
+  .predict-card .msw-icon, .predict-card h2, .predict-card .msw-sub { text-align: center; }
+  .predict-direction-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 18px; }
+  .predict-dir-btn {
+    border: 1px solid var(--border); border-radius: 10px; background: var(--page-plane);
+    color: var(--text-primary); font: inherit; font-size: 13px; font-weight: 600;
+    padding: 12px 6px; text-align: center; line-height: 1.6; cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .predict-dir-btn:hover { border-color: var(--series-1); }
+  .predict-dir-btn.is-selected {
+    border-color: var(--series-1); color: var(--series-1);
+    background: color-mix(in srgb, var(--series-1) 14%, var(--page-plane));
+  }
+  .predict-field { display: block; font-size: 12px; color: var(--text-secondary); margin-top: 16px; }
+  .predict-field-label { display: block; margin-bottom: 6px; }
+  .predict-field input[type="number"] {
+    width: 100%; font: inherit; font-size: 14px; padding: 9px 10px; border-radius: 8px; margin-top: 6px;
+    border: 1px solid var(--border); background: var(--page-plane); color: var(--text-primary);
+  }
+  .predict-field input:focus { outline: none; border-color: var(--series-1); }
+  .predict-timer-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .predict-preset-btn {
+    border: 1px solid var(--border); border-radius: 8px; background: var(--page-plane);
+    color: var(--text-primary); font: inherit; font-size: 12px; font-weight: 600;
+    padding: 8px 4px; cursor: pointer; transition: border-color .15s ease, color .15s ease;
+  }
+  .predict-preset-btn:hover { border-color: var(--series-1); }
+  .predict-preset-btn.is-selected {
+    border-color: var(--series-1); color: var(--series-1);
+    background: color-mix(in srgb, var(--series-1) 14%, var(--page-plane));
+  }
+  .predict-custom-time {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    font-size: 11.5px; color: var(--text-muted); margin-top: 10px;
+  }
+  .predict-custom-time input {
+    font: inherit; font-size: 12px; padding: 6px 8px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--page-plane); color: var(--text-primary);
+  }
+  .predict-msg { font-size: 12px; line-height: 1.4; min-height: 16px; margin-top: 14px; }
+  .predict-msg.predict-msg-error { color: var(--status-critical); }
+  .predict-msg.predict-msg-success { color: var(--status-good); }
+
   /* --- Chat assistant widget ------------------------------------------------ */
   .chat-fab {
     position: fixed; right: 20px; bottom: 20px; z-index: 70;
@@ -786,6 +839,46 @@
     </div>
   </div>
 
+  <div id="predict-overlay" class="msw-overlay predict-overlay" aria-hidden="true">
+    <div class="msw-backdrop" id="predict-backdrop"></div>
+    <div class="msw-card predict-card" role="dialog" aria-modal="true" aria-labelledby="predict-title">
+      <button type="button" id="predict-close-btn" class="msw-close-btn" aria-label="Cancel">✕</button>
+      <div class="msw-icon">🔮</div>
+      <h2 id="predict-title">Predict <span id="predict-symbol">—</span></h2>
+      <p class="msw-sub">Right now: <strong id="predict-current-price">—</strong> · a wager on the bot's account balance, not real money.</p>
+
+      <div class="predict-direction-row">
+        <button type="button" class="predict-dir-btn" data-direction="down">▼<br>Down</button>
+        <button type="button" class="predict-dir-btn" data-direction="exact">🎯<br>~Exact</button>
+        <button type="button" class="predict-dir-btn" data-direction="up">▲<br>Up</button>
+      </div>
+
+      <label class="predict-field">Wager ($)
+        <input type="number" id="predict-wager" min="0.01" step="0.01" />
+      </label>
+
+      <div class="predict-field">
+        <span class="predict-field-label">Resolves in</span>
+        <div class="predict-timer-row">
+          <button type="button" class="predict-preset-btn" data-seconds="60">1 min</button>
+          <button type="button" class="predict-preset-btn" data-seconds="300">5 min</button>
+          <button type="button" class="predict-preset-btn" data-seconds="900">15 min</button>
+          <button type="button" class="predict-preset-btn" data-seconds="3600">1 hour</button>
+        </div>
+        <label class="predict-custom-time">or an exact time
+          <input type="datetime-local" id="predict-custom-time" />
+        </label>
+      </div>
+
+      <div class="predict-msg" id="predict-msg"></div>
+
+      <div class="msw-actions">
+        <button type="button" class="msw-btn msw-btn-secondary" id="predict-cancel-btn">Cancel</button>
+        <button type="button" class="msw-btn msw-btn-primary" id="predict-confirm-btn">Place Prediction</button>
+      </div>
+    </div>
+  </div>
+
   <button type="button" id="chat-fab" class="chat-fab" aria-label="Ask about the bot" title="Ask about the bot">💬</button>
   <div id="chat-panel" class="chat-panel" aria-hidden="true">
     <div class="chat-panel-head">
@@ -831,6 +924,7 @@
             <button type="button" class="bp-btn" data-action="deposit">Add Money</button>
             <button type="button" class="bp-btn" data-action="withdraw">Withdraw</button>
             <button type="button" class="bp-btn" data-action="circuit-breaker">Add to Circuit Breaker</button>
+            <button type="button" class="bp-btn" id="bp-predict-btn">Place a Prediction</button>
           </div>
           <div class="bp-msg" id="bp-msg"></div>
         </div>
@@ -860,6 +954,7 @@
             <div class="control-title">Live Trading</div>
             <div class="control-sub" id="control-status">Configure a backend to enable</div>
           </div>
+          <button type="button" id="predict-btn" class="predict-btn" disabled title="Predict where the price goes">🔮 Predict</button>
         </div>
         <div style="display: flex; align-items: center; gap: 8px;">
           <select id="asset-select" class="asset-select" disabled>
@@ -890,6 +985,7 @@
         <div class="ca-row"><span class="ca-label">AI reasoning</span><span id="ca-reason">—</span></div>
         <div class="ca-row"><span class="ca-label">Position</span><span id="ca-position">—</span></div>
         <div class="ca-row"><span class="ca-label">Trades so far</span><span id="ca-trades">—</span></div>
+        <div class="ca-row"><span class="ca-label">Prediction</span><span id="ca-prediction">No active prediction</span></div>
         <details id="ca-trade-log-details">
           <summary>Show trade log (why balance moved)</summary>
           <table id="trade-log-table"><thead>
@@ -2204,8 +2300,10 @@
     const caReason = document.getElementById('ca-reason');
     const caPosition = document.getElementById('ca-position');
     const caTrades = document.getElementById('ca-trades');
+    const caPrediction = document.getElementById('ca-prediction');
     const tradeLogBody = document.querySelector('#trade-log-table tbody');
     const assetSelect = document.getElementById('asset-select');
+    const predictBtn = document.getElementById('predict-btn');
     const caaStrategy = document.getElementById('caa-strategy');
     const caaReason = document.getElementById('caa-reason');
     const caaThinking = document.getElementById('caa-thinking');
@@ -2392,6 +2490,7 @@
     function refreshEnabledState() {
       toggle.disabled = !configured();
       assetSelect.disabled = !configured() || botIsRunning;
+      predictBtn.disabled = !configured();
       if (!configured()) setStatus('Configure a backend to enable', '');
     }
 
@@ -2443,6 +2542,7 @@
 
         activityPanel.hidden = false;
         updateBalanceTile(data.balance, data.circuit_breaker_floor);
+        syncPredictionState(data.pending_prediction);
 
         // A position appearing where there wasn't one is the exact moment
         // the bot opened a real trade -- flash the chart candle it happened
@@ -2551,6 +2651,163 @@
         pollStatus();
       }
     });
+
+    // --- Predict popup: up/down/~exact price wager (see risk_manager.py's
+    // Prediction/place_prediction/resolve_prediction) ------------------------
+    const predictOverlay = document.getElementById('predict-overlay');
+    const predictBackdrop = document.getElementById('predict-backdrop');
+    const predictCloseBtn = document.getElementById('predict-close-btn');
+    const predictCancelBtn = document.getElementById('predict-cancel-btn');
+    const predictConfirmBtn = document.getElementById('predict-confirm-btn');
+    const predictSymbolEl = document.getElementById('predict-symbol');
+    const predictCurrentPriceEl = document.getElementById('predict-current-price');
+    const predictWagerInput = document.getElementById('predict-wager');
+    const predictCustomTimeInput = document.getElementById('predict-custom-time');
+    const predictMsgEl = document.getElementById('predict-msg');
+    const predictDirBtns = document.querySelectorAll('.predict-dir-btn');
+    const predictPresetBtns = document.querySelectorAll('.predict-preset-btn');
+    const bpPredictBtn = document.getElementById('bp-predict-btn');
+
+    let selectedDirection = null;
+    let selectedDurationSeconds = null;
+    let lastKnownPendingPrediction = null;
+    let predictionTickTimer = null;
+
+    function openPredictModal() {
+      predictSymbolEl.textContent = assetSelect.value || '—';
+      predictCurrentPriceEl.textContent = (lastLoadedSymbol === assetSelect.value && lastLoadedCandles && lastLoadedCandles.length)
+        ? '$' + lastLoadedCandles[lastLoadedCandles.length - 1].close.toFixed(2)
+        : '—';
+      predictWagerInput.value = (INITIAL_BALANCE_REF * 0.05).toFixed(2);
+      selectedDirection = null;
+      selectedDurationSeconds = null;
+      predictCustomTimeInput.value = '';
+      predictDirBtns.forEach(b => b.classList.remove('is-selected'));
+      predictPresetBtns.forEach(b => b.classList.remove('is-selected'));
+      predictMsgEl.textContent = '';
+      predictMsgEl.className = 'predict-msg';
+      predictOverlay.classList.add('is-open');
+      predictOverlay.setAttribute('aria-hidden', 'false');
+    }
+
+    function closePredictModal() {
+      predictOverlay.classList.remove('is-open');
+      predictOverlay.setAttribute('aria-hidden', 'true');
+    }
+
+    predictBtn.addEventListener('click', openPredictModal);
+    bpPredictBtn.addEventListener('click', () => {
+      balancePopover.hidden = true;
+      openPredictModal();
+    });
+    predictCloseBtn.addEventListener('click', closePredictModal);
+    predictCancelBtn.addEventListener('click', closePredictModal);
+    predictBackdrop.addEventListener('click', closePredictModal);
+
+    predictDirBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedDirection = btn.dataset.direction;
+        predictDirBtns.forEach(b => b.classList.toggle('is-selected', b === btn));
+      });
+    });
+    predictPresetBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        selectedDurationSeconds = Number(btn.dataset.seconds);
+        predictCustomTimeInput.value = '';
+        predictPresetBtns.forEach(b => b.classList.toggle('is-selected', b === btn));
+      });
+    });
+    predictCustomTimeInput.addEventListener('input', () => {
+      selectedDurationSeconds = null;
+      predictPresetBtns.forEach(b => b.classList.remove('is-selected'));
+    });
+
+    predictConfirmBtn.addEventListener('click', async () => {
+      predictMsgEl.className = 'predict-msg';
+      if (!configured()) {
+        predictMsgEl.textContent = 'Configure a backend + control token first.';
+        predictMsgEl.className = 'predict-msg predict-msg-error';
+        return;
+      }
+      if (!selectedDirection) {
+        predictMsgEl.textContent = 'Pick Down, ~Exact, or Up.';
+        predictMsgEl.className = 'predict-msg predict-msg-error';
+        return;
+      }
+      const wager = parseFloat(predictWagerInput.value);
+      if (!Number.isFinite(wager) || wager <= 0) {
+        predictMsgEl.textContent = 'Enter a positive wager.';
+        predictMsgEl.className = 'predict-msg predict-msg-error';
+        return;
+      }
+      let durationSeconds = selectedDurationSeconds;
+      if (durationSeconds == null && predictCustomTimeInput.value) {
+        const targetMs = new Date(predictCustomTimeInput.value).getTime();
+        durationSeconds = (targetMs - Date.now()) / 1000;
+      }
+      if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) {
+        predictMsgEl.textContent = 'Pick a resolve time (preset or a future custom time).';
+        predictMsgEl.className = 'predict-msg predict-msg-error';
+        return;
+      }
+
+      predictConfirmBtn.disabled = true;
+      predictMsgEl.textContent = 'Placing…';
+      try {
+        const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/predictions/place', {
+          method: 'POST',
+          headers: { 'X-Control-Token': controlToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ direction: selectedDirection, wager, duration_seconds: durationSeconds }),
+        });
+        const responseBody = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(responseBody.error || ('HTTP ' + resp.status));
+        closePredictModal();
+        pollStatus();
+      } catch (err) {
+        predictMsgEl.textContent = 'Failed: ' + err.message;
+        predictMsgEl.className = 'predict-msg predict-msg-error';
+      } finally {
+        predictConfirmBtn.disabled = false;
+      }
+    });
+
+    function formatCountdown(secondsLeft) {
+      const clamped = Math.max(0, Math.round(secondsLeft));
+      const m = Math.floor(clamped / 60);
+      const s = clamped % 60;
+      return `${m}:${String(s).padStart(2, '0')}`;
+    }
+
+    function renderPredictionRow() {
+      const pred = lastKnownPendingPrediction;
+      if (!pred) {
+        caPrediction.textContent = 'No active prediction';
+        caPrediction.className = '';
+        return;
+      }
+      if (pred.resolved) {
+        caPrediction.textContent = pred.outcome === 'win'
+          ? `Won +$${pred.wager.toFixed(2)} — guessed ${pred.direction} from $${pred.price_at_bet.toFixed(2)}, landed $${pred.resolution_price.toFixed(2)}`
+          : `Lost -$${pred.wager.toFixed(2)} — guessed ${pred.direction} from $${pred.price_at_bet.toFixed(2)}, landed $${pred.resolution_price.toFixed(2)}`;
+        caPrediction.className = pred.outcome === 'win' ? 'pnl-positive' : 'pnl-negative';
+        return;
+      }
+      const secondsLeft = pred.target_time - Date.now() / 1000;
+      caPrediction.className = '';
+      caPrediction.textContent = `${pred.direction.toUpperCase()} from $${pred.price_at_bet.toFixed(2)} — resolves in ${formatCountdown(secondsLeft)}`;
+    }
+
+    function syncPredictionState(pendingPrediction) {
+      lastKnownPendingPrediction = pendingPrediction || null;
+      renderPredictionRow();
+      const stillCounting = lastKnownPendingPrediction && !lastKnownPendingPrediction.resolved;
+      if (stillCounting && !predictionTickTimer) {
+        predictionTickTimer = setInterval(renderPredictionRow, 1000);
+      } else if (!stillCounting && predictionTickTimer) {
+        clearInterval(predictionTickTimer);
+        predictionTickTimer = null;
+      }
+    }
 
     refreshEnabledState();
     if (configured()) { loadAssets(); startPolling(); }

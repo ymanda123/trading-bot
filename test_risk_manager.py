@@ -72,6 +72,83 @@ def test_raise_circuit_breaker_floor_rejects_reaching_balance(rm):
         rm.raise_circuit_breaker_floor(200.0)  # floor would hit the $200 balance
 
 
+# --- Prediction mini-game -------------------------------------------------------
+
+
+def test_place_prediction_deducts_wager(rm):
+    rm.place_prediction("up", 20.0, 100.0, 60.0, now=1000.0)
+    assert rm.balance == pytest.approx(180.0)
+
+
+def test_place_prediction_rejects_bad_direction(rm):
+    with pytest.raises(ValueError):
+        rm.place_prediction("sideways", 20.0, 100.0, 60.0, now=1000.0)
+
+
+def test_place_prediction_rejects_wager_over_balance(rm):
+    with pytest.raises(ValueError):
+        rm.place_prediction("up", 500.0, 100.0, 60.0, now=1000.0)
+
+
+def test_place_prediction_rejects_second_pending(rm):
+    rm.place_prediction("up", 20.0, 100.0, 60.0, now=1000.0)
+    with pytest.raises(ValueError):
+        rm.place_prediction("down", 10.0, 100.0, 60.0, now=1001.0)
+
+
+def test_prediction_not_due_before_target_time(rm):
+    rm.place_prediction("up", 20.0, 100.0, 60.0, now=1000.0)
+    assert rm.prediction_due(now=1030.0) is False
+
+
+def test_prediction_due_after_target_time(rm):
+    rm.place_prediction("up", 20.0, 100.0, 60.0, now=1000.0)
+    assert rm.prediction_due(now=1061.0) is True
+
+
+def test_resolve_up_prediction_win_doubles_wager(rm):
+    rm.place_prediction("up", 20.0, 100.0, 60.0, now=1000.0)  # balance 180
+    pred = rm.resolve_prediction(105.0)
+    assert pred.outcome == "win"
+    assert rm.balance == pytest.approx(220.0)  # 180 + 2*20
+
+
+def test_resolve_up_prediction_loss_forfeits_wager(rm):
+    rm.place_prediction("up", 20.0, 100.0, 60.0, now=1000.0)  # balance 180
+    pred = rm.resolve_prediction(95.0)
+    assert pred.outcome == "loss"
+    assert rm.balance == pytest.approx(180.0)  # wager already gone, no refund
+
+
+def test_resolve_down_prediction_win(rm):
+    rm.place_prediction("down", 20.0, 100.0, 60.0, now=1000.0)
+    pred = rm.resolve_prediction(95.0)
+    assert pred.outcome == "win"
+
+
+def test_resolve_exact_prediction_within_tolerance_wins(rm):
+    rm.place_prediction("exact", 20.0, 100.0, 60.0, now=1000.0)
+    pred = rm.resolve_prediction(100.05)  # within 0.1% of 100
+    assert pred.outcome == "win"
+
+
+def test_resolve_exact_prediction_outside_tolerance_loses(rm):
+    rm.place_prediction("exact", 20.0, 100.0, 60.0, now=1000.0)
+    pred = rm.resolve_prediction(101.0)  # well outside 0.1% of 100
+    assert pred.outcome == "loss"
+
+
+def test_resolve_prediction_rejects_when_none_pending(rm):
+    with pytest.raises(ValueError):
+        rm.resolve_prediction(100.0)
+
+
+def test_place_prediction_allowed_again_after_resolution(rm):
+    rm.place_prediction("up", 20.0, 100.0, 60.0, now=1000.0)
+    rm.resolve_prediction(105.0)
+    rm.place_prediction("down", 10.0, 220.0, 30.0, now=1100.0)  # should not raise
+
+
 # --- Progressive position sizing ---------------------------------------------
 
 
