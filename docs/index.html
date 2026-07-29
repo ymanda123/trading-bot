@@ -600,11 +600,21 @@
 
   /* --- Live chart badge + AI activity strip ---------------------------------- */
   .chart-title-group { display: flex; align-items: center; gap: 8px; }
-  .live-dot-blue { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--series-1); flex: none; }
-  .live-dot-blue::after {
-    content: ""; position: absolute; inset: -4px; border-radius: 50%;
-    border: 1px solid var(--series-1); animation: live-pulse 1.8s ease-out infinite;
+  .live-badge-blue {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px 4px 8px; border-radius: 999px;
+    background: color-mix(in srgb, var(--series-1) 14%, var(--surface-1));
+    border: 1px solid color-mix(in srgb, var(--series-1) 45%, var(--border));
+    font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.04em; color: var(--series-1); flex: none;
   }
+  .live-dot-blue { position: relative; width: 10px; height: 10px; border-radius: 50%; background: var(--series-1); flex: none;
+    animation: live-flash 1.1s ease-in-out infinite; }
+  .live-dot-blue::after {
+    content: ""; position: absolute; inset: -5px; border-radius: 50%;
+    border: 2px solid var(--series-1); animation: live-pulse 1.1s ease-out infinite;
+  }
+  @keyframes live-flash { 0%, 100% { opacity: 1; box-shadow: 0 0 6px 1px var(--series-1); } 50% { opacity: 0.35; box-shadow: 0 0 0 0 transparent; } }
   .chart-ai-activity {
     margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
     background: var(--page-plane);
@@ -808,7 +818,9 @@
       <div class="chart-head-row">
         <div class="chart-title-group">
           <h2 id="chart-title">BTC/USDT — 15m</h2>
-          <span class="live-dot-blue" title="Chart auto-refreshes every 60s from live exchange data"></span>
+          <span class="live-badge-blue" title="Chart auto-refreshes every 60s from live exchange data">
+            <span class="live-dot-blue"></span>LIVE
+          </span>
         </div>
         <select id="chart-asset-select" class="asset-select"></select>
       </div>
@@ -1677,6 +1689,23 @@
     select.value = 'BTC/USDT';
   }
 
+  // Makes the blue "live" marker on the chart's current candle visibly
+  // flash (size + opacity), separate from the 60s data refresh -- restyling
+  // just this one trace is cheap and doesn't touch the rest of the chart.
+  let liveMarkerPulseTimer = null;
+  let liveMarkerPulseOn = false;
+  function startLiveMarkerPulse(traceIndex) {
+    if (liveMarkerPulseTimer) clearInterval(liveMarkerPulseTimer);
+    liveMarkerPulseOn = false;
+    liveMarkerPulseTimer = setInterval(() => {
+      liveMarkerPulseOn = !liveMarkerPulseOn;
+      Plotly.restyle('chart', {
+        'marker.size': [[liveMarkerPulseOn ? 18 : 10]],
+        'marker.opacity': [[liveMarkerPulseOn ? 0.45 : 1]],
+      }, [traceIndex]).catch(() => {});
+    }, 500);
+  }
+
   async function load() {
     const statusLine = document.getElementById('status-line');
     const asset = currentChartAsset();
@@ -1774,7 +1803,7 @@
           { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 30, y1: 30, line: { color: gridline, width: 1, dash: 'dot' } },
         ],
         legend: { orientation: 'h', y: 1.08 },
-      }, { displayModeBar: false, responsive: true });
+      }, { displayModeBar: false, responsive: true }).then(() => startLiveMarkerPulse(6));
 
       const tbody = document.querySelector('#candle-table tbody');
       tbody.innerHTML = candles.slice(-15).reverse().map(c => `
