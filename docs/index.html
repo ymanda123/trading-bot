@@ -473,9 +473,67 @@
   .clock-legend .mkt-dot { margin-left: 8px; }
   .clock-legend .mkt-dot:first-child { margin-left: 0; }
 
+  .mkt-row.is-clickable {
+    cursor: pointer; background: var(--surface-1);
+    transition: transform .15s ease, border-color .15s ease, background .15s ease;
+  }
+  .mkt-row.is-clickable:hover { transform: translateX(-2px); border-color: color-mix(in srgb, var(--series-1) 40%, var(--border)); background: var(--page-plane); }
+  .mkt-row-hint { font-size: 10px; color: var(--text-muted); text-align: center; margin: 2px 0 0; }
+
   @media (max-width: 520px) {
     .clock-tab { border-radius: 10px 0 0 10px; padding: 12px 6px; }
   }
+
+  /* --- Market-switch overlay ---------------------------------------------- */
+  .msw-overlay {
+    position: fixed; inset: 0; z-index: 80;
+    display: flex; align-items: center; justify-content: center; padding: 24px;
+    opacity: 0; pointer-events: none;
+    transition: opacity .25s ease;
+  }
+  .msw-overlay.is-open { opacity: 1; pointer-events: auto; }
+  .msw-backdrop {
+    position: absolute; inset: 0;
+    background:
+      radial-gradient(ellipse 900px 600px at 20% 10%, var(--glow-1), transparent 60%),
+      color-mix(in srgb, var(--page-plane) 92%, black 8%);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+  }
+  .msw-card {
+    position: relative; z-index: 1;
+    width: min(440px, 100%);
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 18px;
+    padding: 32px 28px 28px; text-align: center;
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,0.5);
+    transform: scale(0.96) translateY(8px); opacity: 0;
+    transition: transform .25s ease, opacity .25s ease;
+  }
+  .msw-overlay.is-open .msw-card { transform: scale(1) translateY(0); opacity: 1; }
+  .msw-close-btn {
+    position: absolute; top: 14px; right: 14px;
+    border: 1px solid var(--border); background: var(--page-plane); color: var(--text-secondary);
+    border-radius: 6px; width: 28px; height: 28px; cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .msw-close-btn:hover { border-color: var(--status-critical); color: var(--status-critical); }
+  .msw-icon { font-size: 34px; margin-bottom: 8px; }
+  .msw-card h2 { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 19px; margin: 0 0 10px; }
+  .msw-sub { font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin: 0 0 8px; }
+  .msw-status-line { font-family: 'JetBrains Mono', monospace; font-size: 12px; margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--page-plane); }
+  .msw-status-line.msw-live    { color: var(--status-good); }
+  .msw-status-line.msw-closing { color: var(--status-warning); }
+  .msw-status-line.msw-closed  { color: var(--status-critical); }
+  .msw-warning-text { font-size: 13px; color: var(--text-secondary); line-height: 1.7; text-align: left; margin: 4px 0 0; }
+  .msw-warning-text b { color: var(--text-primary); }
+  .msw-actions { display: flex; gap: 10px; margin-top: 22px; }
+  .msw-btn {
+    flex: 1; border-radius: 9px; padding: 10px 14px; font-size: 13px; font-weight: 600;
+    cursor: pointer; font-family: inherit; border: 1px solid var(--border);
+  }
+  .msw-btn-secondary { background: var(--page-plane); color: var(--text-secondary); }
+  .msw-btn-secondary:hover { border-color: var(--status-critical); color: var(--status-critical); }
+  .msw-btn-primary { background: linear-gradient(100deg, var(--series-1), var(--accent-gold)); color: #fff; border-color: transparent; }
+  .msw-btn-primary:hover { filter: brightness(1.08); }
 </style>
 </head>
 <body>
@@ -509,6 +567,49 @@
       <span class="mkt-dot mkt-closed"></span>Closed
     </p>
   </aside>
+
+  <div id="msw-overlay" class="msw-overlay" aria-hidden="true">
+    <div class="msw-backdrop" id="msw-backdrop"></div>
+    <div class="msw-card" role="dialog" aria-modal="true" aria-labelledby="msw-title">
+      <button type="button" id="msw-close-btn" class="msw-close-btn" aria-label="Cancel">✕</button>
+
+      <div class="msw-step" data-step="confirm">
+        <div class="msw-icon">🌍</div>
+        <h2 id="msw-title">Switch to <span id="msw-market-name">—</span>?</h2>
+        <p class="msw-sub">This becomes the bot's active market on the dashboard above.</p>
+        <div id="msw-status-line" class="msw-status-line">—</div>
+        <div class="msw-actions">
+          <button type="button" class="msw-btn msw-btn-secondary" data-msw-action="cancel">No, stay here</button>
+          <button type="button" class="msw-btn msw-btn-primary" data-msw-action="to-warning">Yes, switch</button>
+        </div>
+      </div>
+
+      <div class="msw-step" data-step="warning" hidden>
+        <div class="msw-icon">⚠️</div>
+        <h2>Quick heads up</h2>
+        <p class="msw-warning-text">
+          <b>Different market, different personality.</b> What works on one doesn't automatically work on another —
+          volatility, hours, and liquidity all shift.<br><br>
+          <b>Your risk rules carry over exactly as-is</b> — same circuit breaker, same position sizing, same cool-off.<br><br>
+          <b>No memory carries over.</b> Switching resets the streak/loss history — the bot treats it as a fresh start.<br><br>
+          Not a big deal, just don't expect it to feel the same.
+        </p>
+        <div class="msw-actions">
+          <button type="button" class="msw-btn msw-btn-secondary" data-msw-action="cancel">Never mind</button>
+          <button type="button" class="msw-btn msw-btn-primary" data-msw-action="confirm">Got it, I understand</button>
+        </div>
+      </div>
+
+      <div class="msw-step" data-step="done" hidden>
+        <div class="msw-icon">✅</div>
+        <h2>You're set</h2>
+        <p class="msw-sub" id="msw-done-text">—</p>
+        <div class="msw-actions">
+          <button type="button" class="msw-btn msw-btn-primary" data-msw-action="close">Back to dashboard</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <div class="ticker-tape" id="ticker-tape">
     <div class="ticker-track" id="ticker-track">
@@ -873,6 +974,27 @@
     { id: 'crypto',    label: 'Crypto — global',          tz: null, alwaysOpen: true },
   ];
 
+  // Mirrors config.py's SUPPORTED_ASSETS -- every symbol here was verified
+  // live against Yahoo Finance before being added there. Kept in sync by
+  // hand since this is a static page with no server-side templating. Maps
+  // each clock market to the one representative asset the "click a market
+  // to switch" flow below hands off to; nyse defaults to Apple as the US
+  // representative.
+  const MARKET_ASSET_MAP = {
+    nyse:     { symbol: 'AAPL',        label: 'Apple (AAPL)' },
+    tsx:      { symbol: 'SHOP.TO',     label: 'Shopify (SHOP.TO)' },
+    lse:      { symbol: 'HSBA.L',      label: 'HSBC (HSBA.L)' },
+    euronext: { symbol: 'MC.PA',       label: 'LVMH (MC.PA)' },
+    xetra:    { symbol: 'SAP.DE',      label: 'SAP (SAP.DE)' },
+    jse:      { symbol: 'NPN.JO',      label: 'Naspers (NPN.JO)' },
+    nse:      { symbol: 'RELIANCE.NS', label: 'Reliance Industries (RELIANCE.NS)' },
+    hkex:     { symbol: '0700.HK',     label: 'Tencent (0700.HK)' },
+    sse:      { symbol: '600519.SS',   label: 'Kweichow Moutai (600519.SS)' },
+    tse:      { symbol: '7203.T',      label: 'Toyota (7203.T)' },
+    asx:      { symbol: 'BHP.AX',      label: 'BHP Group (BHP.AX)' },
+    crypto:   { symbol: 'BTC/USDT',    label: 'Bitcoin (BTC/USDT)' },
+  };
+
   function getTzParts(date, tz) {
     const fmt = new Intl.DateTimeFormat('en-US', {
       timeZone: tz, hourCycle: 'h23',
@@ -943,8 +1065,9 @@
     const container = document.getElementById('clock-markets');
     container.innerHTML = WORLD_MARKETS.map(market => {
       const view = computeMarketView(market, now);
+      const clickable = MARKET_ASSET_MAP[market.id] ? ' is-clickable' : '';
       return `
-        <div class="mkt-row">
+        <div class="mkt-row${clickable}" data-market-id="${escapeHtml(market.id)}">
           <span class="mkt-dot mkt-${view.state}"></span>
           <span class="mkt-label">${escapeHtml(market.label)}</span>
           <span class="mkt-time">${escapeHtml(view.timeText)}</span>
@@ -992,8 +1115,103 @@
       if (e.key === 'Escape' && panel.classList.contains('is-open')) closePanel();
     });
 
+    const marketsEl = document.getElementById('clock-markets');
+    if (marketsEl) {
+      marketsEl.addEventListener('click', (e) => {
+        const row = e.target.closest('.mkt-row.is-clickable');
+        if (!row) return;
+        closePanel();
+        openMarketSwitch(row.dataset.marketId);
+      });
+    }
+
     updateCompactClock();
     setInterval(updateCompactClock, 1000); // cheap enough to always run, even while collapsed
+  })();
+
+  // --- Market-switch overlay ------------------------------------------------
+  // Clicking a tradable market row in the clock panel opens this full-screen
+  // overlay in place of navigating to a real second page -- same "you're now
+  // somewhere else" feel, none of the duplicated markup/CSS a second HTML
+  // file would need. openMarketSwitch is a plain hoisted function declaration
+  // so the clock panel's row click handler (defined above) can call it even
+  // though it's wired up below.
+  let mswCurrentMarketId = null;
+
+  function mswShowStep(name) {
+    document.querySelectorAll('.msw-step').forEach(el => { el.hidden = el.dataset.step !== name; });
+  }
+
+  function openMarketSwitch(marketId) {
+    const overlay = document.getElementById('msw-overlay');
+    const asset = MARKET_ASSET_MAP[marketId];
+    const market = WORLD_MARKETS.find(m => m.id === marketId);
+    if (!overlay || !asset || !market) return;
+
+    mswCurrentMarketId = marketId;
+    document.getElementById('msw-market-name').textContent = market.label;
+
+    const view = computeMarketView(market, new Date());
+    const statusEl = document.getElementById('msw-status-line');
+    statusEl.className = `msw-status-line msw-${view.state}`;
+    statusEl.textContent = market.alwaysOpen
+      ? 'Trades 24/7 — no market hours to worry about'
+      : { live: '🟢 Open right now', closing: '🟠 Closing soon', closed: '🔴 Closed right now' }[view.state]
+        + ` · local time ${view.timeText} · ${view.statusText}`;
+
+    mswShowStep('confirm');
+    overlay.classList.add('is-open');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+
+  function mswClose() {
+    const overlay = document.getElementById('msw-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('is-open');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+
+  function mswApplySelection() {
+    const asset = MARKET_ASSET_MAP[mswCurrentMarketId];
+    if (!asset) return;
+
+    const select = document.getElementById('asset-select');
+    let option = [...select.options].find(o => o.value === asset.symbol);
+    if (!option) {
+      option = document.createElement('option');
+      option.value = asset.symbol;
+      option.textContent = asset.label;
+      select.appendChild(option);
+    }
+    select.value = asset.symbol;
+
+    const backendConfigured = Boolean(localStorage.getItem('tb_backend_url') && localStorage.getItem('tb_control_token'));
+    document.getElementById('msw-done-text').textContent = backendConfigured
+      ? `${asset.label} is now selected in Live Trading above. Flip the switch when you're ready — nothing starts automatically.`
+      : `${asset.label} is now selected in Live Trading above. You'll still need to configure a backend (the Configure button up there) before you can actually start it.`;
+    mswShowStep('done');
+  }
+
+  (function initMarketSwitchOverlay() {
+    const overlay = document.getElementById('msw-overlay');
+    if (!overlay) return;
+
+    overlay.addEventListener('click', (e) => {
+      const actionEl = e.target.closest('[data-msw-action]');
+      if (!actionEl) return;
+      const action = actionEl.dataset.mswAction;
+      if (action === 'cancel' || action === 'close') mswClose();
+      else if (action === 'to-warning') mswShowStep('warning');
+      else if (action === 'confirm') mswApplySelection();
+    });
+
+    const closeBtn = document.getElementById('msw-close-btn');
+    if (closeBtn) closeBtn.addEventListener('click', mswClose);
+    const backdrop = document.getElementById('msw-backdrop');
+    if (backdrop) backdrop.addEventListener('click', mswClose);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && overlay.classList.contains('is-open')) mswClose();
+    });
   })();
 
   const ATR_PERIOD = 14;

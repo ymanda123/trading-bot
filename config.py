@@ -34,6 +34,21 @@ class Config:
         "WTI/USD": {"label": "Crude oil futures (WTI)", "kind": "commodity", "yahoo_symbol": "CL=F"},
         "AAPL": {"label": "Apple (AAPL)", "kind": "stock", "yahoo_symbol": "AAPL"},
         "TSLA": {"label": "Tesla (TSLA)", "kind": "stock", "yahoo_symbol": "TSLA"},
+        # One representative stock per major world exchange, for the
+        # dashboard's world-clock "click a market to trade it" flow. Every
+        # ticker below was verified live against Yahoo Finance's public
+        # chart API (same one _fetch_ohlcv_yahoo uses) with the bot's actual
+        # interval/range before being added here.
+        "SHOP.TO": {"label": "Shopify (SHOP.TO, Toronto)", "kind": "stock", "yahoo_symbol": "SHOP.TO"},
+        "HSBA.L": {"label": "HSBC (HSBA.L, London)", "kind": "stock", "yahoo_symbol": "HSBA.L"},
+        "MC.PA": {"label": "LVMH (MC.PA, Paris)", "kind": "stock", "yahoo_symbol": "MC.PA"},
+        "SAP.DE": {"label": "SAP (SAP.DE, Frankfurt)", "kind": "stock", "yahoo_symbol": "SAP.DE"},
+        "NPN.JO": {"label": "Naspers (NPN.JO, Johannesburg)", "kind": "stock", "yahoo_symbol": "NPN.JO"},
+        "RELIANCE.NS": {"label": "Reliance Industries (RELIANCE.NS, Mumbai)", "kind": "stock", "yahoo_symbol": "RELIANCE.NS"},
+        "0700.HK": {"label": "Tencent (0700.HK, Hong Kong)", "kind": "stock", "yahoo_symbol": "0700.HK"},
+        "600519.SS": {"label": "Kweichow Moutai (600519.SS, Shanghai)", "kind": "stock", "yahoo_symbol": "600519.SS"},
+        "7203.T": {"label": "Toyota (7203.T, Tokyo)", "kind": "stock", "yahoo_symbol": "7203.T"},
+        "BHP.AX": {"label": "BHP Group (BHP.AX, Sydney)", "kind": "stock", "yahoo_symbol": "BHP.AX"},
     }
 
     # --- Capital & circuit breaker ------------------------------------------
