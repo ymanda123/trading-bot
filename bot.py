@@ -84,12 +84,17 @@ def _fetch_ohlcv_kraken(config, limit: int) -> pd.DataFrame:
     return df[["timestamp", "open", "high", "low", "close", "volume"]]
 
 
-def _fetch_ohlcv_yahoo(yahoo_symbol: str, config, limit: int) -> pd.DataFrame:
+def fetch_ohlcv_yahoo(yahoo_symbol: str, config, limit: int) -> pd.DataFrame:
     """Stocks and commodities have no exchange account behind them here --
     there's nothing like ccxt/Binance Testnet for equities or futures in this
     project -- so those symbols go through Yahoo Finance's public chart API
     instead. Still paper-trading only: this is a read-only price feed, no
-    order-placement capability exists for these assets at all."""
+    order-placement capability exists for these assets at all.
+
+    Public (no leading underscore) because server.py's /candles endpoint
+    also calls this directly, to proxy Yahoo data for the dashboard's chart
+    -- Yahoo's chart API sends no CORS header, so a browser can't call it
+    itself the way it can Coinbase/Kraken/Binance for crypto."""
     resp = requests.get(
         f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}",
         params={"interval": config.TIMEFRAME, "range": "60d"},
@@ -122,7 +127,7 @@ def fetch_ohlcv_df(exchange: ccxt.Exchange, config=Config) -> pd.DataFrame:
     asset = config.SUPPORTED_ASSETS.get(config.SYMBOL)
 
     if asset and asset["kind"] != "crypto":
-        return _fetch_ohlcv_yahoo(asset["yahoo_symbol"], config, limit)
+        return fetch_ohlcv_yahoo(asset["yahoo_symbol"], config, limit)
 
     try:
         raw = exchange.fetch_ohlcv(config.SYMBOL, timeframe=config.TIMEFRAME, limit=limit)

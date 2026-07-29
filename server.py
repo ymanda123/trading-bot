@@ -1,6 +1,6 @@
 """Control-plane API for the trading bot: exposes /start, /stop, /status,
-/assets, and /news so the public dashboard can pick an asset, toggle the
-live trade loop on and off, and see what it's doing.
+/assets, /news, and /candles so the public dashboard can pick an asset,
+toggle the live trade loop on and off, and see what it's doing.
 
 Runs the bot loop on a background thread inside this process. Note that
 bot.py's TradingBot only *simulates* fills against live prices -- it never
@@ -13,8 +13,8 @@ mean anything.
 
 /start and /stop require a shared control token (CONTROL_TOKEN env var)
 sent via the X-Control-Token header, so a stranger with the dashboard URL
-can't flip the switch. /status, /assets, and /news are read-only and
-unauthenticated.
+can't flip the switch. /status, /assets, /news, and /candles are read-only
+and unauthenticated.
 """
 
 import logging
@@ -25,7 +25,7 @@ import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from bot import TradingBot
+from bot import TradingBot, fetch_ohlcv_yahoo
 from config import Config
 from live_tv import get_live_tv
 from news_feed import fetch_news
@@ -201,6 +201,42 @@ def live_tv():
         networks = {}
 
     return jsonify(networks=networks)
+
+
+@app.get("/candles")
+def candles():
+    """Read-only, unauthenticated -- OHLCV candles for any non-crypto symbol
+    in Config.SUPPORTED_ASSETS (?symbol=AAPL), proxying Yahoo Finance's
+    public chart API server-side. The dashboard's main chart fetches crypto
+    candles directly from Coinbase/Kraken/Binance in the browser -- those
+    exchanges' public market-data endpoints send CORS headers -- but Yahoo's
+    chart API, the only free keyless source for stocks/commodities, does
+    not, so the browser can't call it itself; this is why crypto charts
+    work with no backend configured at all, while stock/commodity charts
+    need one."""
+    symbol = request.args.get("symbol", "")
+    asset = Config.SUPPORTED_ASSETS.get(symbol)
+    if not asset:
+        return jsonify(error=f"unknown symbol {symbol!r}"), 400
+    if asset["kind"] == "crypto":
+        return jsonify(error="crypto symbols are fetched directly by the browser, not via /candles"), 400
+
+    try:
+        df = fetch_ohlcv_yahoo(asset["yahoo_symbol"], Config, limit=150)
+    except Exception:
+        logger.exception("Candle fetch failed for %s", symbol)
+        return jsonify(error="fetch failed"), 502
+
+    return jsonify(candles=[
+        {
+            "time": row.timestamp.isoformat(),
+            "open": row.open,
+            "high": row.high,
+            "low": row.low,
+            "close": row.close,
+        }
+        for row in df.itertuples()
+    ])
 
 
 if __name__ == "__main__":

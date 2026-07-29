@@ -249,6 +249,9 @@
   }
   section:hover { border-color: color-mix(in srgb, var(--series-1) 25%, var(--border)); }
   section h2 { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 16px; margin: 0 0 4px; letter-spacing: -0.005em; }
+
+  .chart-head-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 4px; }
+  .chart-head-row h2 { margin: 0; }
   section .desc { font-size: 13px; color: var(--text-secondary); margin: 0 0 14px; }
 
   .reveal { opacity: 0; transform: translateY(14px); transition: opacity .55s ease, transform .55s ease; }
@@ -696,8 +699,11 @@
     </section>
 
     <section class="reveal">
-      <h2>BTC/USDT — 1h</h2>
-      <p class="desc">Live public market data (Coinbase, Kraken, or Binance — whichever responds), with the bot's fast(10)/slow(30) moving averages, 20-bar support/resistance, and 14-period RSI overlaid.</p>
+      <div class="chart-head-row">
+        <h2 id="chart-title">BTC/USDT — 1h</h2>
+        <select id="chart-asset-select" class="asset-select"></select>
+      </div>
+      <p class="desc" id="chart-desc">Live public market data (Coinbase, Kraken, or Binance — whichever responds), with the bot's fast(10)/slow(30) moving averages, 20-bar support/resistance, and 14-period RSI overlaid.</p>
       <div id="chart"></div>
       <div id="status-line">Loading live market data…</div>
       <details>
@@ -1175,20 +1181,17 @@
     const asset = MARKET_ASSET_MAP[mswCurrentMarketId];
     if (!asset) return;
 
-    const select = document.getElementById('asset-select');
-    let option = [...select.options].find(o => o.value === asset.symbol);
-    if (!option) {
-      option = document.createElement('option');
-      option.value = asset.symbol;
-      option.textContent = asset.label;
-      select.appendChild(option);
+    ensureOptionSelected(document.getElementById('asset-select'), asset.symbol, asset.label);
+    const chartSelect = document.getElementById('chart-asset-select');
+    if (chartSelect && [...chartSelect.options].some(o => o.value === asset.symbol)) {
+      chartSelect.value = asset.symbol;
+      load(); // this market's asset is always one of CHART_ASSETS, so no need to add an option here
     }
-    select.value = asset.symbol;
 
     const backendConfigured = Boolean(localStorage.getItem('tb_backend_url') && localStorage.getItem('tb_control_token'));
     document.getElementById('msw-done-text').textContent = backendConfigured
-      ? `${asset.label} is now selected in Live Trading above. Flip the switch when you're ready — nothing starts automatically.`
-      : `${asset.label} is now selected in Live Trading above. You'll still need to configure a backend (the Configure button up there) before you can actually start it.`;
+      ? `${asset.label} is now selected in Live Trading and on the chart above. Flip the switch when you're ready — nothing starts automatically.`
+      : `${asset.label} is now selected in Live Trading and on the chart above. You'll still need to configure a backend (the Configure button up there) before you can actually start trading it.`;
     mswShowStep('done');
   }
 
@@ -1221,6 +1224,49 @@
   const SLOW_MA = 30;
   const GRID_LOOKBACK = 20;
   const RSI_PERIOD = 14;
+
+  // Mirrors config.py's SUPPORTED_ASSETS -- every symbol here was verified
+  // live against its data source before being added there. Kept in sync by
+  // hand since this is a static page with no server-side templating. Drives
+  // the main chart's "option button" asset picker.
+  const CHART_ASSETS = [
+    { symbol: 'BTC/USDT',    label: 'Bitcoin (BTC/USDT)',                     kind: 'crypto' },
+    { symbol: 'ETH/USDT',    label: 'Ethereum (ETH/USDT)',                    kind: 'crypto' },
+    { symbol: 'XAU/USD',     label: 'Gold futures (XAU/USD)',                 kind: 'commodity' },
+    { symbol: 'WTI/USD',     label: 'Crude oil futures (WTI)',                kind: 'commodity' },
+    { symbol: 'AAPL',        label: 'Apple (AAPL, US)',                       kind: 'stock' },
+    { symbol: 'TSLA',        label: 'Tesla (TSLA, US)',                       kind: 'stock' },
+    { symbol: 'SHOP.TO',     label: 'Shopify (SHOP.TO, Canada)',              kind: 'stock' },
+    { symbol: 'HSBA.L',      label: 'HSBC (HSBA.L, UK)',                      kind: 'stock' },
+    { symbol: 'MC.PA',       label: 'LVMH (MC.PA, France)',                   kind: 'stock' },
+    { symbol: 'SAP.DE',      label: 'SAP (SAP.DE, Germany)',                  kind: 'stock' },
+    { symbol: 'NPN.JO',      label: 'Naspers (NPN.JO, South Africa)',         kind: 'stock' },
+    { symbol: 'RELIANCE.NS', label: 'Reliance Industries (RELIANCE.NS, India)', kind: 'stock' },
+    { symbol: '0700.HK',     label: 'Tencent (0700.HK, Hong Kong)',           kind: 'stock' },
+    { symbol: '600519.SS',   label: 'Kweichow Moutai (600519.SS, China)',     kind: 'stock' },
+    { symbol: '7203.T',      label: 'Toyota (7203.T, Japan)',                 kind: 'stock' },
+    { symbol: 'BHP.AX',      label: 'BHP Group (BHP.AX, Australia)',          kind: 'stock' },
+  ];
+
+  // Crypto candles come straight from each exchange's own public API (all
+  // three send CORS headers, so the browser can call them directly, no
+  // backend needed); every other asset routes through the backend's
+  // /candles proxy since Yahoo Finance's chart API sends no CORS header.
+  const CRYPTO_EXCHANGE_PAIRS = {
+    'BTC/USDT': { binance: 'BTCUSDT', coinbase: 'BTC-USD', kraken: 'XBTUSD' },
+    'ETH/USDT': { binance: 'ETHUSDT', coinbase: 'ETH-USD', kraken: 'ETHUSD' },
+  };
+
+  function ensureOptionSelected(select, symbol, label) {
+    let option = [...select.options].find(o => o.value === symbol);
+    if (!option) {
+      option = document.createElement('option');
+      option.value = symbol;
+      option.textContent = label;
+      select.appendChild(option);
+    }
+    select.value = symbol;
+  }
 
   function rollingMin(values, period) {
     const out = new Array(values.length).fill(null);
@@ -1301,8 +1347,8 @@
   // ("restricted location" per its terms). Coinbase and Kraken's public
   // market-data endpoints don't carry that restriction, so they're tried
   // first; Binance stays as a fallback for the visitors it does work for.
-  async function fetchBinanceCandles() {
-    const resp = await fetch('https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=1h&limit=80');
+  async function fetchBinanceCandles(pair) {
+    const resp = await fetch(`https://api.binance.com/api/v3/klines?symbol=${encodeURIComponent(pair)}&interval=1h&limit=80`);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const raw = await resp.json();
     if (raw.code) throw new Error(raw.msg || 'restricted');
@@ -1312,8 +1358,8 @@
     }));
   }
 
-  async function fetchCoinbaseCandles() {
-    const resp = await fetch('https://api.exchange.coinbase.com/products/BTC-USD/candles?granularity=3600');
+  async function fetchCoinbaseCandles(pair) {
+    const resp = await fetch(`https://api.exchange.coinbase.com/products/${encodeURIComponent(pair)}/candles?granularity=3600`);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const raw = await resp.json(); // [time_s, low, high, open, close, volume], newest first
     return raw
@@ -1322,8 +1368,8 @@
       .slice(-80);
   }
 
-  async function fetchKrakenCandles() {
-    const resp = await fetch('https://api.kraken.com/0/public/OHLC?pair=XBTUSD&interval=60');
+  async function fetchKrakenCandles(pair) {
+    const resp = await fetch(`https://api.kraken.com/0/public/OHLC?pair=${encodeURIComponent(pair)}&interval=60`);
     if (!resp.ok) throw new Error('HTTP ' + resp.status);
     const body = await resp.json();
     if (body.error && body.error.length) throw new Error(body.error.join('; '));
@@ -1337,11 +1383,13 @@
       .slice(-80);
   }
 
-  async function fetchCandlesWithFallback() {
+  async function fetchCryptoCandles(symbol) {
+    const pairs = CRYPTO_EXCHANGE_PAIRS[symbol];
+    if (!pairs) throw new Error(`no exchange mapping for ${symbol}`);
     const sources = [
-      { name: 'Coinbase', fn: fetchCoinbaseCandles },
-      { name: 'Kraken', fn: fetchKrakenCandles },
-      { name: 'Binance', fn: fetchBinanceCandles },
+      { name: 'Coinbase', fn: () => fetchCoinbaseCandles(pairs.coinbase) },
+      { name: 'Kraken', fn: () => fetchKrakenCandles(pairs.kraken) },
+      { name: 'Binance', fn: () => fetchBinanceCandles(pairs.binance) },
     ];
     const errors = [];
     for (const { name, fn } of sources) {
@@ -1355,10 +1403,59 @@
     throw new Error(errors.join(' | '));
   }
 
+  // Yahoo Finance's chart API (the only free keyless source for
+  // stocks/commodities) sends no CORS header, so the browser can't call it
+  // directly the way it can Coinbase/Kraken/Binance -- this goes through
+  // server.py's /candles proxy instead, which needs a backend configured.
+  async function fetchBackendCandles(symbol) {
+    const backendUrl = localStorage.getItem('tb_backend_url') || '';
+    if (!backendUrl) {
+      throw new Error('needs a backend configured (see "Configure" in Live Trading above) to chart non-crypto assets');
+    }
+    const resp = await fetch(backendUrl.replace(/\/+$/, '') + '/candles?symbol=' + encodeURIComponent(symbol));
+    if (!resp.ok) {
+      const body = await resp.json().catch(() => ({}));
+      throw new Error(body.error || ('HTTP ' + resp.status));
+    }
+    const data = await resp.json();
+    const candles = (data.candles || []).map(c => ({
+      time: new Date(c.time), open: c.open, high: c.high, low: c.low, close: c.close,
+    }));
+    if (!candles.length) throw new Error('no candles returned');
+    return { candles, source: 'backend (Yahoo Finance)' };
+  }
+
+  function fetchCandlesForAsset(asset) {
+    return asset.kind === 'crypto' ? fetchCryptoCandles(asset.symbol) : fetchBackendCandles(asset.symbol);
+  }
+
+  function currentChartAsset() {
+    const select = document.getElementById('chart-asset-select');
+    const symbol = select && select.value ? select.value : 'BTC/USDT';
+    return CHART_ASSETS.find(a => a.symbol === symbol) || CHART_ASSETS[0];
+  }
+
+  function populateChartAssetSelect() {
+    const select = document.getElementById('chart-asset-select');
+    if (!select) return;
+    const groupOrder = [['crypto', 'Crypto'], ['commodity', 'Commodities'], ['stock', 'Stocks']];
+    select.innerHTML = groupOrder.map(([kind, groupLabel]) => {
+      const opts = CHART_ASSETS.filter(a => a.kind === kind)
+        .map(a => `<option value="${escapeHtml(a.symbol)}">${escapeHtml(a.label)}</option>`).join('');
+      return `<optgroup label="${escapeHtml(groupLabel)}">${opts}</optgroup>`;
+    }).join('');
+    select.value = 'BTC/USDT';
+  }
+
   async function load() {
     const statusLine = document.getElementById('status-line');
+    const asset = currentChartAsset();
+    document.getElementById('chart-title').textContent = `${asset.label} — 1h`;
+    document.getElementById('chart-desc').textContent = asset.kind === 'crypto'
+      ? "Live public market data (Coinbase, Kraken, or Binance — whichever responds), with the bot's fast(10)/slow(30) moving averages, 20-bar support/resistance, and 14-period RSI overlaid."
+      : "Live market data via the configured backend's Yahoo Finance proxy, with the bot's fast(10)/slow(30) moving averages, 20-bar support/resistance, and 14-period RSI overlaid.";
     try {
-      const { candles, source } = await fetchCandlesWithFallback();
+      const { candles, source } = await fetchCandlesForAsset(asset);
       const closes = candles.map(c => c.close);
       const fastMa = sma(closes, FAST_MA);
       const slowMa = sma(closes, SLOW_MA);
@@ -1416,7 +1513,7 @@
         x: candles.map(c => c.time),
         open: candles.map(c => c.open), high: candles.map(c => c.high),
         low: candles.map(c => c.low), close: candles.map(c => c.close),
-        name: 'BTC/USDT',
+        name: asset.symbol,
         increasing: { line: { color: good } },
         decreasing: { line: { color: critical } },
       };
@@ -1431,7 +1528,7 @@
         font: { color: textSecondary, family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 12 },
         margin: { t: 10, r: 10, b: 40, l: 50 },
         xaxis: { rangeslider: { visible: false }, gridcolor: gridline, showline: false },
-        yaxis: { domain: [0.32, 1], gridcolor: gridline, showline: false, title: 'USDT' },
+        yaxis: { domain: [0.32, 1], gridcolor: gridline, showline: false, title: asset.kind === 'crypto' ? 'USDT' : 'Price' },
         yaxis2: { domain: [0, 0.22], gridcolor: gridline, showline: false, title: 'RSI', range: [0, 100] },
         shapes: [
           { type: 'line', xref: 'paper', x0: 0, x1: 1, yref: 'y2', y0: 70, y1: 70, line: { color: gridline, width: 1, dash: 'dot' } },
@@ -1453,6 +1550,12 @@
     }
   }
 
+  populateChartAssetSelect();
+  document.getElementById('chart-asset-select').addEventListener('change', () => {
+    const asset = currentChartAsset();
+    ensureOptionSelected(document.getElementById('asset-select'), asset.symbol, asset.label);
+    load();
+  });
   load();
   setInterval(load, 60000);
 
