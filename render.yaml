@@ -19,4 +19,4 @@ services:
       - key: SYMBOL
         value: BTC/USDT
       - key: TIMEFRAME
-        value: 1h
+        value: 15m

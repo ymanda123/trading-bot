@@ -26,6 +26,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 from bot import TradingBot, fetch_ohlcv_yahoo
+from chat_assistant import answer as chat_answer
 from config import Config
 from live_tv import get_live_tv
 from news_feed import fetch_news
@@ -44,6 +45,29 @@ _state_lock = threading.Lock()
 _bot = None
 _loop_thread = None
 _running = threading.Event()
+
+# --- Chat assistant rate limiting -------------------------------------------
+# The chat endpoint is unauthenticated (anyone with the dashboard URL can use
+# it), so it shares a free-tier Groq quota with every other visitor. This is
+# a simple per-IP sliding-window limiter, not a defense against a determined
+# attacker -- just enough to stop one visitor (or one bug in the frontend
+# retry logic) from burning the whole site's quota.
+_chat_rate_lock = threading.Lock()
+_chat_rate_log = {}  # ip -> list[float] request timestamps within the window
+CHAT_RATE_LIMIT = 8
+CHAT_RATE_WINDOW_SEC = 60
+
+
+def _chat_rate_limited(ip: str) -> bool:
+    now = time.time()
+    with _chat_rate_lock:
+        recent = [t for t in _chat_rate_log.get(ip, []) if now - t < CHAT_RATE_WINDOW_SEC]
+        if len(recent) >= CHAT_RATE_LIMIT:
+            _chat_rate_log[ip] = recent
+            return True
+        recent.append(now)
+        _chat_rate_log[ip] = recent
+        return False
 
 
 def _run_loop():
@@ -183,6 +207,54 @@ def news():
         }
         for item in items
     ])
+
+
+def _status_context_text() -> str:
+    """Short plain-text summary of live bot state for the chat assistant --
+    the same fields /status returns, condensed so it's cheap to include in
+    every prompt."""
+    with _state_lock:
+        running = _running.is_set()
+        bot = _bot
+
+    if bot is None:
+        return "running=False (bot has not been started yet)"
+
+    rm = bot.risk_manager
+    return (
+        f"running={running} symbol={bot.config.SYMBOL} "
+        f"balance=${rm.balance:.2f} net_pnl=${rm.balance - bot.config.INITIAL_BALANCE:.2f} "
+        f"regime={bot.last_decision.regime.value if bot.last_decision else 'unknown'} "
+        f"signal={bot.last_decision.signal.value if bot.last_decision else 'unknown'} "
+        f"reason={bot.last_decision.reason if bot.last_decision else 'n/a'} "
+        f"consecutive_losses={rm.consecutive_losses} "
+        f"circuit_breaker_tripped={rm.circuit_breaker_tripped} "
+        f"in_cooloff={rm.is_in_cooloff()} "
+        f"trade_count={len(bot.trade_log)}"
+    )
+
+
+@app.post("/chat")
+def chat():
+    """Read-only, unauthenticated -- public chat assistant for the website.
+    Uses the same free Groq API as ai_strategy.py but never touches trading
+    logic; it can only describe what the bot is doing, not change it. Rate
+    limited per IP (see _chat_rate_limited) to protect the shared free-tier
+    quota."""
+    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
+    if _chat_rate_limited(ip):
+        return jsonify(error="rate_limited"), 429
+
+    body = request.get_json(silent=True) or {}
+    message = body.get("message", "")
+    history = body.get("history", [])
+    if not isinstance(message, str) or not message.strip():
+        return jsonify(error="message required"), 400
+    if not isinstance(history, list):
+        history = []
+
+    reply = chat_answer(message, history, _status_context_text())
+    return jsonify(reply=reply)
 
 
 @app.get("/live-tv")

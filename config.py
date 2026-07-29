@@ -19,7 +19,7 @@ class Config:
     API_SECRET = os.getenv("BINANCE_API_SECRET", "")
     TESTNET = True
     SYMBOL = os.getenv("SYMBOL", "BTC/USDT")
-    TIMEFRAME = os.getenv("TIMEFRAME", "1h")
+    TIMEFRAME = os.getenv("TIMEFRAME", "15m")
 
     # --- Tradable assets (fixed set, selectable via server.py's /start) --------
     # "crypto" symbols route through the ccxt/Binance -> Coinbase -> Kraken
