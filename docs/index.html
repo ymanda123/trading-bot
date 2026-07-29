@@ -1003,6 +1003,7 @@
 <script>
   const root = document.documentElement;
   const toggle = document.getElementById('theme-toggle');
+  const THEME_KEY = 'tb_theme';
   function applyTheme(mode) {
     if (mode) { root.setAttribute('data-theme', mode); }
     else { root.removeAttribute('data-theme'); }
@@ -1014,8 +1015,15 @@
     if (attr === 'light') return false;
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   }
-  toggle.addEventListener('click', () => applyTheme(currentIsDark() ? 'light' : 'dark'));
-  applyTheme(null);
+  toggle.addEventListener('click', () => {
+    const next = currentIsDark() ? 'light' : 'dark';
+    applyTheme(next);
+    localStorage.setItem(THEME_KEY, next);
+  });
+  // Default every visitor to dark mode; once someone picks a mode
+  // explicitly (via the toggle), remember it across reloads/visits instead
+  // of resetting to the browser's system preference each time.
+  applyTheme(localStorage.getItem(THEME_KEY) || 'dark');
 
   // --- Scroll reveal -----------------------------------------------------------
   (function initReveal() {
