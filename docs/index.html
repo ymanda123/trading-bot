@@ -380,10 +380,136 @@
   .x-post-text { font-size: 13px; color: var(--text-secondary); line-height: 1.5; white-space: pre-wrap; }
 
   .x-note { font-size: 11px; color: var(--text-muted); margin-top: 10px; line-height: 1.5; }
+
+  /* --- World clock & markets sidebar ------------------------------------- */
+  .clock-tab {
+    position: fixed; top: 50%; right: 0; transform: translateY(-50%);
+    z-index: 60;
+    display: flex; flex-direction: column; align-items: center; gap: 6px;
+    background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+    backdrop-filter: blur(10px) saturate(140%);
+    -webkit-backdrop-filter: blur(10px) saturate(140%);
+    border: 1px solid var(--border); border-right: none;
+    border-radius: 12px 0 0 12px;
+    padding: 14px 8px;
+    cursor: pointer;
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+    box-shadow: -6px 0 20px -10px rgba(0,0,0,0.35);
+    transition: padding-right .15s ease, box-shadow .15s ease;
+  }
+  .clock-tab:hover { padding-right: 14px; box-shadow: -8px 0 26px -8px var(--glow-1); }
+  .clock-tab-icon { font-size: 14px; }
+  .clock-tab-time {
+    font-size: 12px; font-weight: 600; letter-spacing: 0.04em;
+    writing-mode: vertical-rl; text-orientation: mixed;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .clock-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    opacity: 0; pointer-events: none; transition: opacity .25s ease; z-index: 55;
+  }
+  .clock-backdrop.is-open { opacity: 1; pointer-events: auto; }
+
+  .clock-panel {
+    position: fixed; top: 0; right: 0; height: 100vh; width: min(380px, 92vw);
+    background: var(--surface-1);
+    border-left: 1px solid var(--border);
+    box-shadow: -20px 0 50px -20px rgba(0,0,0,0.5);
+    transform: translateX(100%);
+    transition: transform .3s ease;
+    z-index: 60;
+    overflow-y: auto;
+    padding: 18px 18px 24px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .clock-panel.is-open { transform: translateX(0); }
+
+  .clock-panel-head {
+    display: flex; align-items: center; justify-content: space-between;
+    font-family: 'Space Grotesk', 'Inter', sans-serif; font-weight: 600; font-size: 15px;
+  }
+  .clock-close-btn {
+    border: 1px solid var(--border); background: var(--page-plane); color: var(--text-secondary);
+    border-radius: 6px; width: 26px; height: 26px; cursor: pointer; font-size: 13px; line-height: 1;
+  }
+  .clock-close-btn:hover { border-color: var(--series-1); color: var(--series-1); }
+
+  .clock-hero {
+    border: 1px solid var(--border); border-radius: 12px; padding: 16px;
+    background:
+      radial-gradient(ellipse 260px 140px at 100% 0%, var(--glow-1), transparent 65%),
+      var(--page-plane);
+    text-align: center;
+  }
+  .clock-hero-time-row { font-family: 'JetBrains Mono', monospace; }
+  .clock-hero-time { font-size: 32px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: 0.01em; }
+  .clock-hero-ms { font-size: 17px; font-weight: 600; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+  .clock-hero-date { font-size: 13px; color: var(--text-secondary); margin-top: 6px; }
+  .clock-hero-tz { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+  .clock-markets-head { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); }
+  .clock-markets { display: grid; gap: 8px; }
+  .mkt-row {
+    display: grid; grid-template-columns: 12px 1fr auto auto; align-items: center; gap: 8px;
+    border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px;
+    font-size: 12px;
+  }
+  .mkt-label { color: var(--text-primary); font-weight: 500; }
+  .mkt-time { font-family: 'JetBrains Mono', monospace; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+  .mkt-status { font-size: 11px; text-align: right; min-width: 78px; }
+  .mkt-status-live    { color: var(--status-good); }
+  .mkt-status-closing { color: var(--status-warning); }
+  .mkt-status-closed  { color: var(--text-muted); }
+
+  .mkt-dot { width: 9px; height: 9px; border-radius: 50%; }
+  .mkt-dot.mkt-live    { background: var(--status-good); animation: mkt-flash 1.3s ease-in-out infinite; }
+  .mkt-dot.mkt-closing { background: var(--status-warning); }
+  .mkt-dot.mkt-closed  { background: var(--status-critical); opacity: 0.55; }
+  @keyframes mkt-flash { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+
+  .clock-legend { font-size: 11px; color: var(--text-muted); display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin: 0; }
+  .clock-legend .mkt-dot { margin-left: 8px; }
+  .clock-legend .mkt-dot:first-child { margin-left: 0; }
+
+  @media (max-width: 520px) {
+    .clock-tab { border-radius: 10px 0 0 10px; padding: 12px 6px; }
+  }
 </style>
 </head>
 <body>
 <div class="viz-root" id="viz-root">
+  <button type="button" id="clock-tab" class="clock-tab" aria-expanded="false" aria-controls="clock-panel">
+    <span class="clock-tab-icon">🕐</span>
+    <span id="clock-tab-time" class="clock-tab-time">--:--:--</span>
+  </button>
+  <div id="clock-backdrop" class="clock-backdrop"></div>
+  <aside id="clock-panel" class="clock-panel" aria-hidden="true">
+    <div class="clock-panel-head">
+      <span>World Clock &amp; Markets</span>
+      <button type="button" id="clock-close-btn" class="clock-close-btn" aria-label="Close world clock">✕</button>
+    </div>
+    <div class="clock-hero">
+      <div class="clock-hero-time-row">
+        <span id="clock-hero-time" class="clock-hero-time">--:--:--</span><span id="clock-hero-ms" class="clock-hero-ms">.---</span>
+      </div>
+      <div id="clock-hero-date" class="clock-hero-date">—</div>
+      <div id="clock-hero-tz" class="clock-hero-tz">—</div>
+    </div>
+    <div>
+      <div class="clock-markets-head">Financial Markets</div>
+      <div id="clock-markets" class="clock-markets" style="margin-top: 8px;">
+        <p class="control-hint">Loading…</p>
+      </div>
+    </div>
+    <p class="clock-legend">
+      <span class="mkt-dot mkt-live"></span>Live
+      <span class="mkt-dot mkt-closing"></span>Closing soon
+      <span class="mkt-dot mkt-closed"></span>Closed
+    </p>
+  </aside>
+
   <div class="ticker-tape" id="ticker-tape">
     <div class="ticker-track" id="ticker-track">
       <span class="ticker-item"><span class="tk-sym">Loading live prices…</span></span>
@@ -719,6 +845,156 @@
   }
   refreshTicker();
   setInterval(refreshTicker, 60000);
+
+  // --- World clock & markets sidebar ----------------------------------------
+  // The user's own local time is just `new Date()` -- no timezone math
+  // needed, the browser already gives wall-clock local values. Every other
+  // market's local time comes from Intl.DateTimeFormat with an explicit IANA
+  // timeZone, which the browser resolves (DST included) without needing any
+  // timezone library. Open/close hours below are each market's regular
+  // trading session in ITS OWN local time, Mon-Fri only -- this doesn't
+  // account for exchange holidays (there's no keyless data source for those),
+  // so a market can show "Closed" as live/open on a holiday.
+  const CLOSING_SOON_MINUTES = 15;
+  const WEEKEND_DAYS = new Set(['Sat', 'Sun']);
+
+  const WORLD_MARKETS = [
+    { id: 'nyse',      label: 'New York — NYSE / NASDAQ', tz: 'America/New_York',      open: [9, 30],  close: [16, 0] },
+    { id: 'tsx',       label: 'Toronto — TSX',            tz: 'America/Toronto',       open: [9, 30],  close: [16, 0] },
+    { id: 'lse',       label: 'London — LSE',             tz: 'Europe/London',         open: [8, 0],   close: [16, 30] },
+    { id: 'euronext',  label: 'Paris — Euronext',         tz: 'Europe/Paris',          open: [9, 0],   close: [17, 30] },
+    { id: 'xetra',     label: 'Frankfurt — Xetra',        tz: 'Europe/Berlin',         open: [9, 0],   close: [17, 30] },
+    { id: 'jse',       label: 'Johannesburg — JSE',       tz: 'Africa/Johannesburg',   open: [9, 0],   close: [17, 0] },
+    { id: 'nse',       label: 'Mumbai — NSE / BSE',       tz: 'Asia/Kolkata',          open: [9, 15],  close: [15, 30] },
+    { id: 'hkex',      label: 'Hong Kong — HKEX',         tz: 'Asia/Hong_Kong',        open: [9, 30],  close: [16, 0] },
+    { id: 'sse',       label: 'Shanghai — SSE',           tz: 'Asia/Shanghai',         open: [9, 30],  close: [15, 0] },
+    { id: 'tse',       label: 'Tokyo — TSE',              tz: 'Asia/Tokyo',            open: [9, 0],   close: [15, 0] },
+    { id: 'asx',       label: 'Sydney — ASX',             tz: 'Australia/Sydney',      open: [10, 0],  close: [16, 0] },
+    { id: 'crypto',    label: 'Crypto — global',          tz: null, alwaysOpen: true },
+  ];
+
+  function getTzParts(date, tz) {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: tz, hourCycle: 'h23',
+      weekday: 'short', hour: '2-digit', minute: '2-digit',
+    });
+    const map = {};
+    for (const part of fmt.formatToParts(date)) map[part.type] = part.value;
+    return { weekday: map.weekday, hour: parseInt(map.hour, 10), minute: parseInt(map.minute, 10) };
+  }
+
+  function computeMarketView(market, now) {
+    if (market.alwaysOpen) {
+      return { state: 'live', statusText: 'Open 24/7', timeText: '24 / 7' };
+    }
+    const { weekday, hour, minute } = getTzParts(now, market.tz);
+    const timeText = `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+    if (WEEKEND_DAYS.has(weekday)) return { state: 'closed', statusText: 'Closed · weekend', timeText };
+
+    const nowMin = hour * 60 + minute;
+    const openMin = market.open[0] * 60 + market.open[1];
+    const closeMin = market.close[0] * 60 + market.close[1];
+    if (nowMin < openMin || nowMin >= closeMin) return { state: 'closed', statusText: 'Closed', timeText };
+
+    const minsLeft = closeMin - nowMin;
+    if (minsLeft <= CLOSING_SOON_MINUTES) return { state: 'closing', statusText: `Closes in ${minsLeft}m`, timeText };
+    return { state: 'live', statusText: 'Open', timeText };
+  }
+
+  function updateCompactClock() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const el = document.getElementById('clock-tab-time');
+    if (el) el.textContent = `${hh}:${mm}:${ss}`;
+  }
+
+  function updateHeroClock() {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, '0');
+    const mm = String(now.getMinutes()).padStart(2, '0');
+    const ss = String(now.getSeconds()).padStart(2, '0');
+    const ms = String(now.getMilliseconds()).padStart(3, '0');
+    document.getElementById('clock-hero-time').textContent = `${hh}:${mm}:${ss}`;
+    document.getElementById('clock-hero-ms').textContent = `.${ms}`;
+    document.getElementById('clock-hero-date').textContent =
+      now.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  }
+
+  function updateTzLabel() {
+    const now = new Date();
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Local';
+    let offsetLabel;
+    try {
+      const parts = new Intl.DateTimeFormat('en-US', { timeZoneName: 'shortOffset' }).formatToParts(now);
+      offsetLabel = (parts.find(p => p.type === 'timeZoneName') || {}).value || '';
+    } catch (err) {
+      const offsetMin = -now.getTimezoneOffset();
+      offsetLabel = `GMT${offsetMin >= 0 ? '+' : '-'}${Math.floor(Math.abs(offsetMin) / 60)}`;
+    }
+    const city = tz.split('/').pop().replace(/_/g, ' ');
+    document.getElementById('clock-hero-tz').textContent = `${city} · ${tz} · ${offsetLabel}`;
+  }
+
+  function renderMarkets() {
+    updateTzLabel();
+    const now = new Date();
+    const container = document.getElementById('clock-markets');
+    container.innerHTML = WORLD_MARKETS.map(market => {
+      const view = computeMarketView(market, now);
+      return `
+        <div class="mkt-row">
+          <span class="mkt-dot mkt-${view.state}"></span>
+          <span class="mkt-label">${escapeHtml(market.label)}</span>
+          <span class="mkt-time">${escapeHtml(view.timeText)}</span>
+          <span class="mkt-status mkt-status-${view.state}">${escapeHtml(view.statusText)}</span>
+        </div>`;
+    }).join('');
+  }
+
+  (function initClockSidebar() {
+    const tab = document.getElementById('clock-tab');
+    const panel = document.getElementById('clock-panel');
+    const backdrop = document.getElementById('clock-backdrop');
+    const closeBtn = document.getElementById('clock-close-btn');
+    if (!tab || !panel) return;
+
+    let heroTimer = null;
+    let marketsTimer = null;
+
+    function openPanel() {
+      panel.classList.add('is-open');
+      backdrop.classList.add('is-open');
+      panel.setAttribute('aria-hidden', 'false');
+      tab.setAttribute('aria-expanded', 'true');
+      updateHeroClock();
+      renderMarkets();
+      heroTimer = setInterval(updateHeroClock, 47); // fast enough for a smooth-looking ms readout
+      marketsTimer = setInterval(renderMarkets, 1000);
+    }
+
+    function closePanel() {
+      panel.classList.remove('is-open');
+      backdrop.classList.remove('is-open');
+      panel.setAttribute('aria-hidden', 'true');
+      tab.setAttribute('aria-expanded', 'false');
+      if (heroTimer) clearInterval(heroTimer);
+      if (marketsTimer) clearInterval(marketsTimer);
+      heroTimer = null;
+      marketsTimer = null;
+    }
+
+    tab.addEventListener('click', () => (panel.classList.contains('is-open') ? closePanel() : openPanel()));
+    if (closeBtn) closeBtn.addEventListener('click', closePanel);
+    if (backdrop) backdrop.addEventListener('click', closePanel);
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && panel.classList.contains('is-open')) closePanel();
+    });
+
+    updateCompactClock();
+    setInterval(updateCompactClock, 1000); // cheap enough to always run, even while collapsed
+  })();
 
   const ATR_PERIOD = 14;
   const LOW_VOL_THRESHOLD = 0.01;
