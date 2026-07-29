@@ -198,10 +198,10 @@ def decide_with_ai(df, config=Config) -> StrategyDecision:
             f"{ai_note}{news_note} {backtest_note}. Passed, but isn't signaling an "
             f"entry on the current candle. Holding until it does."
         )
-        return StrategyDecision(regime, Signal.HOLD, atr, reason)
+        return StrategyDecision(regime, Signal.HOLD, atr, reason, strategy_type)
 
     reason = (
         f"{ai_note}{news_note} {backtest_note}. Passed, and is signaling "
         f"{live_signal.value} on the current candle. Executing."
     )
-    return StrategyDecision(regime, live_signal, atr, reason)
+    return StrategyDecision(regime, live_signal, atr, reason, strategy_type)

@@ -45,6 +45,12 @@ _state_lock = threading.Lock()
 _bot = None
 _loop_thread = None
 _running = threading.Event()
+# Set for the ~5-10s a step() call is actually mid-flight (Groq call +
+# backtest grid search), cleared the rest of the ~POLL_SECONDS cycle. /status
+# exposes this so the dashboard can show a "thinking" indicator instead of
+# looking frozen between decisions. Event.is_set()/set()/clear() are already
+# atomic, so this needs no lock of its own.
+_stepping = threading.Event()
 
 # --- Chat assistant rate limiting -------------------------------------------
 # The chat endpoint is unauthenticated (anyone with the dashboard URL can use
@@ -73,10 +79,13 @@ def _chat_rate_limited(ip: str) -> bool:
 def _run_loop():
     logger.info("Trade loop starting")
     while _running.is_set():
+        _stepping.set()
         try:
             _bot.step()
         except Exception:
             logger.exception("Error during bot step")
+        finally:
+            _stepping.clear()
         for _ in range(POLL_SECONDS):
             if not _running.is_set():
                 break
@@ -135,7 +144,7 @@ def status():
         bot = _bot
 
     if bot is None:
-        return jsonify(running=False, balance=None, symbol=Config.SYMBOL)
+        return jsonify(running=False, thinking=False, balance=None, symbol=Config.SYMBOL)
 
     rm = bot.risk_manager
     size_pct, atr_stop_multiple = rm.get_position_sizing()
@@ -154,6 +163,7 @@ def status():
 
     return jsonify(
         running=running,
+        thinking=_stepping.is_set(),
         symbol=bot.config.SYMBOL,
         balance=round(rm.balance, 2),
         net_pnl=round(rm.balance - bot.config.INITIAL_BALANCE, 2),
@@ -166,6 +176,7 @@ def status():
         last_price=round(bot.last_price, 2) if bot.last_price is not None else None,
         current_regime=bot.last_decision.regime.value if bot.last_decision else None,
         current_signal=bot.last_decision.signal.value if bot.last_decision else None,
+        current_strategy=bot.last_decision.strategy_type if bot.last_decision else None,
         current_reason=bot.last_decision.reason if bot.last_decision else None,
         position=position,
         trade_count=len(bot.trade_log),

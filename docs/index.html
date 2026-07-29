@@ -597,6 +597,34 @@
     .chat-panel { right: 12px; bottom: 12px; left: 12px; width: auto; }
     .chat-fab { right: 16px; bottom: 16px; }
   }
+
+  /* --- Live chart badge + AI activity strip ---------------------------------- */
+  .chart-title-group { display: flex; align-items: center; gap: 8px; }
+  .live-dot-blue { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--series-1); flex: none; }
+  .live-dot-blue::after {
+    content: ""; position: absolute; inset: -4px; border-radius: 50%;
+    border: 1px solid var(--series-1); animation: live-pulse 1.8s ease-out infinite;
+  }
+  .chart-ai-activity {
+    margin-top: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--page-plane);
+  }
+  .caa-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+  .caa-label { font-size: 11px; font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; color: var(--text-muted); }
+  .caa-strategy { font-family: 'Space Grotesk', 'Inter', sans-serif; font-size: 15px; font-weight: 600; color: var(--text-primary); }
+  .caa-reason { font-size: 12.5px; color: var(--text-secondary); margin-top: 4px; line-height: 1.5; }
+  .think-dots { display: inline-flex; align-items: center; gap: 5px; }
+  .think-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--dot-color, currentColor);
+    animation: think-flash 0.9s ease-in-out infinite;
+  }
+  .think-dot:nth-child(1) { animation-delay: 0s; }
+  .think-dot:nth-child(2) { animation-delay: 0.15s; }
+  .think-dot:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes think-flash {
+    0%, 100% { opacity: 0.25; transform: scale(0.75); }
+    50% { opacity: 1; transform: scale(1.15); }
+  }
 </style>
 </head>
 <body>
@@ -778,12 +806,29 @@
 
     <section class="reveal">
       <div class="chart-head-row">
-        <h2 id="chart-title">BTC/USDT — 15m</h2>
+        <div class="chart-title-group">
+          <h2 id="chart-title">BTC/USDT — 15m</h2>
+          <span class="live-dot-blue" title="Chart auto-refreshes every 60s from live exchange data"></span>
+        </div>
         <select id="chart-asset-select" class="asset-select"></select>
       </div>
       <p class="desc" id="chart-desc">Live public market data (Coinbase, Kraken, or Binance — whichever responds), with the bot's fast(10)/slow(30) moving averages, 20-bar support/resistance, and 14-period RSI overlaid.</p>
       <div id="chart"></div>
       <div id="status-line">Loading live market data…</div>
+
+      <div id="chart-ai-activity" class="chart-ai-activity">
+        <div class="caa-head">
+          <span class="caa-label">Bot's live strategy</span>
+          <span id="caa-thinking" class="think-dots" hidden>
+            <span class="think-dot" style="--dot-color: var(--series-1)"></span>
+            <span class="think-dot" style="--dot-color: var(--accent-gold)"></span>
+            <span class="think-dot" style="--dot-color: var(--status-good)"></span>
+          </span>
+        </div>
+        <div id="caa-strategy" class="caa-strategy">Configure a backend above (Live Trading → Configure) to watch the bot's live decisions here.</div>
+        <div id="caa-reason" class="caa-reason"></div>
+      </div>
+
       <details>
         <summary>Show underlying candles as a table</summary>
         <table id="candle-table"><thead>
@@ -1708,7 +1753,16 @@
       const resistanceTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: resistanceSeries, name: `Resistance (${GRID_LOOKBACK})`, line: { color: seq550, width: 1, dash: 'dot' } };
       const rsiTrace = { type: 'scatter', mode: 'lines', x: candles.map(c => c.time), y: rsiSeries, name: `RSI (${RSI_PERIOD})`, line: { color: seq400, width: 2 }, yaxis: 'y2' };
 
-      Plotly.newPlot('chart', [candleTrace, fastTrace, slowTrace, supportTrace, resistanceTrace, rsiTrace], {
+      // Marks the most recent (still-forming) candle in blue so it's obvious
+      // at a glance which one is "live" -- the one the bot is watching right now.
+      const lastCandle = candles[candles.length - 1];
+      const liveMarkerTrace = {
+        type: 'scatter', mode: 'markers', x: [lastCandle.time], y: [lastCandle.close],
+        marker: { color: seriesFast, size: 11, symbol: 'circle', line: { color: surface, width: 2 } },
+        name: 'Live', hoverinfo: 'skip', showlegend: false,
+      };
+
+      Plotly.newPlot('chart', [candleTrace, fastTrace, slowTrace, supportTrace, resistanceTrace, rsiTrace, liveMarkerTrace], {
         paper_bgcolor: surface, plot_bgcolor: surface,
         font: { color: textSecondary, family: 'system-ui, -apple-system, "Segoe UI", sans-serif', size: 12 },
         margin: { t: 10, r: 10, b: 40, l: 50 },
@@ -1947,6 +2001,35 @@
     const caTrades = document.getElementById('ca-trades');
     const tradeLogBody = document.querySelector('#trade-log-table tbody');
     const assetSelect = document.getElementById('asset-select');
+    const caaStrategy = document.getElementById('caa-strategy');
+    const caaReason = document.getElementById('caa-reason');
+    const caaThinking = document.getElementById('caa-thinking');
+
+    const STRATEGY_NAMES = {
+      ma_crossover: 'MA Crossover (trend)',
+      support_resistance: 'Support / Resistance (mean-reversion)',
+      rsi_threshold: 'RSI Threshold (mean-reversion)',
+    };
+
+    function updateChartAiActivity(data) {
+      if (!caaStrategy) return;
+      caaThinking.hidden = !data.thinking;
+
+      if (!data.running && !data.current_strategy && !data.current_reason) {
+        caaStrategy.textContent = 'Not started yet — turn on Live Trading above.';
+        caaReason.textContent = '';
+        return;
+      }
+      if (data.thinking && !data.current_reason) {
+        caaStrategy.textContent = 'Reading price action and news for the first time…';
+        caaReason.textContent = '';
+        return;
+      }
+      caaStrategy.textContent = data.current_strategy
+        ? (STRATEGY_NAMES[data.current_strategy] || data.current_strategy)
+        : `Holding — no validated strategy right now (${data.current_signal || 'hold'})`;
+      caaReason.textContent = data.current_reason || '';
+    }
 
     let backendUrl = localStorage.getItem('tb_backend_url') || '';
     let controlToken = localStorage.getItem('tb_control_token') || '';
@@ -2053,16 +2136,27 @@
                 <td class="pnl-cell ${t.pnl > 0 ? 'pnl-positive' : t.pnl < 0 ? 'pnl-negative' : ''}">${t.pnl >= 0 ? '+' : ''}$${t.pnl}</td>
               </tr>`).join('')
           : '<tr><td colspan="6">No closed trades yet</td></tr>';
+
+        updateChartAiActivity(data);
       } catch (err) {
         setStatus('Backend unreachable: ' + err.message, 'is-error');
         activityPanel.hidden = true;
+        if (caaStrategy) {
+          caaThinking.hidden = true;
+          caaStrategy.textContent = 'Backend unreachable — check the URL in Settings.';
+          caaReason.textContent = '';
+        }
       }
     }
 
     function startPolling() {
       if (pollTimer) clearInterval(pollTimer);
       pollStatus();
-      pollTimer = setInterval(pollStatus, 10000);
+      // Faster than a plain status poll needs to be, so the "thinking" dots
+      // reliably catch the ~5-10s window server.py's _stepping is set during
+      // each step() -- POLL_SECONDS between steps is 60s by default, so this
+      // still only adds a few cheap /status calls for every real decision.
+      pollTimer = setInterval(pollStatus, 3000);
     }
 
     settingsBtn.addEventListener('click', () => {

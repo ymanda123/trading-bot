@@ -38,6 +38,13 @@ class StrategyDecision:
     signal: Signal
     atr: float
     reason: str
+    # Name of the validated strategy template currently in play (e.g.
+    # "rsi_threshold"), or None when nothing's active (standby, no AI
+    # proposal, or nothing passed the backtest gate -- see ai_strategy.py).
+    # Defaults to None so this module's own fixed-rule decide() -- used by
+    # app.py's Streamlit dashboard, not the AI pipeline -- doesn't need to
+    # set it.
+    strategy_type: str | None = None
 
 
 def compute_atr(df: pd.DataFrame, period: int = Config.ATR_PERIOD) -> pd.Series:
