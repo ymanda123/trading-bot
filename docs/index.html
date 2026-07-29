@@ -980,6 +980,7 @@
       </div>
       <div id="control-activity" class="control-activity" hidden>
         <div class="ca-row"><span class="ca-label">Net P&amp;L</span><span id="ca-net-pnl">—</span></div>
+        <div class="ca-row"><span class="ca-label">Unrealized P&amp;L (open position)</span><span id="ca-unrealized-pnl">—</span></div>
         <div class="ca-row"><span class="ca-label">Last checked</span><span id="ca-last-checked">—</span></div>
         <div class="ca-row"><span class="ca-label">Regime / Signal</span><span id="ca-regime-signal">—</span></div>
         <div class="ca-row"><span class="ca-label">AI reasoning</span><span id="ca-reason">—</span></div>
@@ -2295,6 +2296,7 @@
     const saveBtn = document.getElementById('control-save-btn');
     const activityPanel = document.getElementById('control-activity');
     const caNetPnl = document.getElementById('ca-net-pnl');
+    const caUnrealizedPnl = document.getElementById('ca-unrealized-pnl');
     const caLastChecked = document.getElementById('ca-last-checked');
     const caRegimeSignal = document.getElementById('ca-regime-signal');
     const caReason = document.getElementById('ca-reason');
@@ -2563,6 +2565,15 @@
         } else {
           caNetPnl.textContent = '—';
           caNetPnl.className = '';
+        }
+
+        if (typeof data.unrealized_pnl === 'number') {
+          const sign = data.unrealized_pnl > 0 ? '+' : '';
+          caUnrealizedPnl.textContent = `${sign}$${data.unrealized_pnl.toFixed(2)}`;
+          caUnrealizedPnl.className = data.unrealized_pnl > 0 ? 'pnl-positive' : data.unrealized_pnl < 0 ? 'pnl-negative' : '';
+        } else {
+          caUnrealizedPnl.textContent = 'No open position';
+          caUnrealizedPnl.className = '';
         }
 
         caLastChecked.textContent = data.last_step_at

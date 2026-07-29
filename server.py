@@ -431,13 +431,25 @@ def status():
     size_pct, atr_stop_multiple = rm.get_position_sizing()
 
     position = None
+    unrealized_pnl = None
     if bot.position:
+        pos = bot.position
         position = {
-            "side": bot.position["side"].value,
-            "entry_price": round(bot.position["entry_price"], 2),
-            "quantity": round(bot.position["quantity"], 6),
-            "stop_price": round(bot.position["stop_price"], 2),
+            "side": pos["side"].value,
+            "entry_price": round(pos["entry_price"], 2),
+            "quantity": round(pos["quantity"], 6),
+            "stop_price": round(pos["stop_price"], 2),
         }
+        if bot.last_price is not None:
+            # Mirrors bot.py's _check_exit math exactly (gross price move,
+            # entry friction already paid, exit friction estimated at the
+            # current price) -- this is "what you'd actually net if it
+            # closed right now," not just a raw price-delta estimate.
+            gross = (bot.last_price - pos["entry_price"]) * pos["quantity"]
+            if pos["side"] is Signal.SELL:
+                gross = -gross
+            estimated_exit_friction = rm.calculate_friction_cost(bot.last_price * pos["quantity"])
+            unrealized_pnl = gross - pos["entry_friction"] - estimated_exit_friction
 
     recent_trades = list(reversed(bot.trade_log[-20:]))
     last_trade = recent_trades[0] if recent_trades else None
@@ -461,6 +473,7 @@ def status():
         current_strategy=bot.last_decision.strategy_type if bot.last_decision else None,
         current_reason=bot.last_decision.reason if bot.last_decision else None,
         position=position,
+        unrealized_pnl=round(unrealized_pnl, 2) if unrealized_pnl is not None else None,
         pending_prediction=pending_prediction,
         trade_count=len(bot.trade_log),
         last_trade=last_trade,
