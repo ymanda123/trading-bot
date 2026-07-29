@@ -25,11 +25,12 @@ import time
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from bot import TradingBot, fetch_ohlcv_yahoo
+from bot import TradingBot, fetch_ohlcv_df, fetch_ohlcv_yahoo
 from chat_assistant import answer as chat_answer
 from config import Config
 from live_tv import get_live_tv
 from news_feed import fetch_news
+from strategy import Signal, compute_atr
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("trading-bot-server")
@@ -135,6 +136,58 @@ def stop():
     with _state_lock:
         _running.clear()
     return jsonify(status="stopped")
+
+
+@app.post("/debug/force-trade")
+def force_trade():
+    """TEMPORARY, test-only -- opens one real paper position immediately
+    using current price/ATR and the bot's normal sizing/stop/friction logic
+    (RiskManager.calculate_position_size, slippage, fees), bypassing the AI
+    + backtest gate entirely. This is for manually verifying the open/track/
+    close mechanics work end-to-end without waiting for a live signal --
+    NOT how the bot decides real trades; every other entry still goes
+    through decide_with_ai. Tagged "manual_test" as its regime so it's
+    obviously distinguishable in the trade log from an AI-driven entry.
+    Control-token gated like /start and /stop since it mutates state.
+    Remove once verified.
+    """
+    if not _authorized(request):
+        return jsonify(error="unauthorized"), 401
+
+    with _state_lock:
+        bot = _bot
+        running = _running.is_set()
+
+    if bot is None or not running:
+        return jsonify(error="bot not running -- start it first"), 400
+    if bot.position is not None:
+        return jsonify(error="a position is already open"), 400
+
+    body = request.get_json(silent=True) or {}
+    side = body.get("side", "buy")
+    if side not in ("buy", "sell"):
+        return jsonify(error="side must be 'buy' or 'sell'"), 400
+
+    try:
+        df = fetch_ohlcv_df(bot.exchange, bot.config)
+        price = df["close"].iloc[-1]
+        atr = compute_atr(df, bot.config.ATR_PERIOD).iloc[-1]
+        signal = Signal.BUY if side == "buy" else Signal.SELL
+        bot._open_position(signal, price, atr)
+        bot.position["regime"] = "manual_test"
+    except Exception:
+        logger.exception("Force-trade failed")
+        return jsonify(error="failed to open test position -- see server logs"), 500
+
+    return jsonify(
+        status="opened",
+        position={
+            "side": bot.position["side"].value,
+            "entry_price": round(bot.position["entry_price"], 2),
+            "quantity": round(bot.position["quantity"], 6),
+            "stop_price": round(bot.position["stop_price"], 2),
+        },
+    )
 
 
 @app.get("/status")
