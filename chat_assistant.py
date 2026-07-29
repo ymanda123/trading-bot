@@ -1,8 +1,8 @@
 """Public-facing AI chat assistant for the website.
 
 Separate from ai_strategy.py's trading-decision pipeline -- this one only
-answers visitor questions about the bot, using the same free-tier Groq API
-(GROQ_API_KEY). It never places trades, changes config, or touches
+answers visitor questions about the bot, using the same free-tier Gemini
+API (GEMINI_API_KEY). It never places trades, changes config, or touches
 risk_manager; it only ever sees the same data /status, /news, and /assets
 already expose publicly, handed to it as a short text summary by the caller.
 """
@@ -10,13 +10,14 @@ already expose publicly, handed to it as a short text summary by the caller.
 import logging
 import os
 
-from groq import Groq
+from openai import OpenAI
 
 logger = logging.getLogger("trading-bot")
 
 _client = None
 
-_CHAT_MODEL = "llama-3.3-70b-versatile"
+_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+_CHAT_MODEL = "gemini-flash-lite-latest"
 
 MAX_MESSAGE_CHARS = 500
 MAX_HISTORY_TURNS = 6  # user+assistant pairs of prior context to keep
@@ -46,7 +47,7 @@ _SYSTEM_PROMPT = (
 def _get_client():
     global _client
     if _client is None:
-        _client = Groq(api_key=os.environ["GROQ_API_KEY"])
+        _client = OpenAI(api_key=os.environ["GEMINI_API_KEY"], base_url=_GEMINI_BASE_URL)
     return _client
 
 

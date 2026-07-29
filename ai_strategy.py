@@ -40,8 +40,9 @@ matter what the model or the backtest says. And once a signal is allowed
 through, position sizing, stop distance, the circuit breaker, and the
 cool-off are still entirely risk_manager.py's job, unchanged.
 
-Uses Groq's free-tier API (no credit card required), configured via the
-GROQ_API_KEY environment variable. https://console.groq.com/keys
+Uses Google Gemini's free-tier API (no credit card required) via its
+OpenAI-compatible endpoint, configured via the GEMINI_API_KEY environment
+variable. https://aistudio.google.com/apikey
 """
 
 import json
@@ -49,7 +50,7 @@ import logging
 import os
 import re
 
-from groq import Groq
+from openai import OpenAI
 
 from backtester import STRATEGY_TYPES, search_best_across_types
 from config import Config
@@ -60,7 +61,8 @@ logger = logging.getLogger("trading-bot")
 
 _client = None
 
-_GROQ_MODEL = "llama-3.3-70b-versatile"
+_GEMINI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+_GEMINI_MODEL = "gemini-flash-lite-latest"
 
 _STRATEGY_DESCRIPTIONS = (
     '  - "ma_crossover": trend-following -- trades a fast/slow moving-average crossover\n'
@@ -72,7 +74,7 @@ _STRATEGY_DESCRIPTIONS = (
 def _get_client():
     global _client
     if _client is None:
-        _client = Groq(api_key=os.environ["GROQ_API_KEY"])
+        _client = OpenAI(api_key=os.environ["GEMINI_API_KEY"], base_url=_GEMINI_BASE_URL)
     return _client
 
 
@@ -127,7 +129,7 @@ def propose_strategy(df, regime, atr, config=Config) -> dict:
 
     try:
         response = _get_client().chat.completions.create(
-            model=_GROQ_MODEL,
+            model=_GEMINI_MODEL,
             messages=[{"role": "user", "content": prompt}],
             temperature=0.3,
             response_format={"type": "json_object"},

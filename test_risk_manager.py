@@ -39,6 +39,39 @@ def test_can_trade_blocked_after_circuit_breaker(rm):
     assert rm.can_trade() is False
 
 
+# --- Manual account actions ---------------------------------------------------
+
+
+def test_deposit_increases_balance(rm):
+    rm.deposit(50.0)
+    assert rm.balance == pytest.approx(250.0)
+
+
+def test_deposit_rejects_non_positive_amount(rm):
+    with pytest.raises(ValueError):
+        rm.deposit(0)
+
+
+def test_withdraw_decreases_balance(rm):
+    rm.withdraw(50.0)
+    assert rm.balance == pytest.approx(150.0)
+
+
+def test_withdraw_rejects_more_than_balance(rm):
+    with pytest.raises(ValueError):
+        rm.withdraw(500.0)
+
+
+def test_raise_circuit_breaker_floor(rm):
+    rm.raise_circuit_breaker_floor(10.0)
+    assert rm.circuit_breaker_floor == pytest.approx(170.0)
+
+
+def test_raise_circuit_breaker_floor_rejects_reaching_balance(rm):
+    with pytest.raises(ValueError):
+        rm.raise_circuit_breaker_floor(200.0)  # floor would hit the $200 balance
+
+
 # --- Progressive position sizing ---------------------------------------------
 
 

@@ -219,6 +219,75 @@
   .tile:hover::before { opacity: 1; }
   .tile .label { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
   .tile .value { font-family: 'JetBrains Mono', monospace; font-size: 20px; font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  /* --- Balance tile: live glow + bullish/bearish flash + account popover --- */
+  /* z-index (not just position:relative) is required here so this tile
+     establishes its own stacking context -- otherwise a position:relative
+     element with the default z-index:auto still paints behind later
+     non-positioned siblings (like #control-panel below it), clipping the
+     popover even though overflow is visible. */
+  .tile-balance { overflow: visible; z-index: 30; }
+  .tile-balance .value { transition: color .25s ease; }
+  .tile-balance.glow-green {
+    border-color: var(--status-good);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-good) 35%, transparent), 0 10px 30px -10px color-mix(in srgb, var(--status-good) 55%, transparent);
+    animation: tile-glow-fade 6s ease-out forwards;
+  }
+  .tile-balance.glow-red {
+    border-color: var(--status-critical);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--status-critical) 35%, transparent), 0 10px 30px -10px color-mix(in srgb, var(--status-critical) 55%, transparent);
+    animation: tile-glow-fade-red 6s ease-out forwards;
+  }
+  @keyframes tile-glow-fade {
+    0%   { box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-good) 55%, transparent), 0 10px 30px -8px color-mix(in srgb, var(--status-good) 70%, transparent); }
+    100% { box-shadow: 0 0 0 2px transparent, 0 10px 30px -10px transparent; }
+  }
+  @keyframes tile-glow-fade-red {
+    0%   { box-shadow: 0 0 0 3px color-mix(in srgb, var(--status-critical) 55%, transparent), 0 10px 30px -8px color-mix(in srgb, var(--status-critical) 70%, transparent); }
+    100% { box-shadow: 0 0 0 2px transparent, 0 10px 30px -10px transparent; }
+  }
+  .balance-trend {
+    font-size: 11.5px; font-weight: 700; letter-spacing: 0.02em; margin-top: 6px;
+    text-transform: uppercase;
+  }
+  .balance-trend.trend-up   { color: var(--status-good); animation: trend-flash 0.85s ease-in-out 5; }
+  .balance-trend.trend-down { color: var(--status-critical); animation: trend-flash 0.85s ease-in-out 5; }
+  @keyframes trend-flash { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+  .balance-actions-btn {
+    position: absolute; top: 10px; right: 10px; z-index: 2;
+    width: 24px; height: 24px; border-radius: 50%; border: 1px solid var(--border);
+    background: linear-gradient(100deg, var(--series-1), var(--accent-gold)); color: #fff;
+    font-size: 13px; font-weight: 700; line-height: 1; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    transition: transform .15s ease, filter .15s ease;
+  }
+  .balance-actions-btn:hover { transform: scale(1.08); filter: brightness(1.08); }
+  .balance-popover {
+    position: absolute; top: 60px; right: 10px; z-index: 25;
+    width: 228px; padding: 12px; display: grid; gap: 8px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,0.28);
+  }
+  .balance-popover[hidden] { display: none; }
+  .bp-amount {
+    width: 100%; font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--page-plane); color: var(--text-primary);
+  }
+  .bp-amount:focus { outline: none; border-color: var(--series-1); }
+  .bp-actions { display: grid; gap: 6px; }
+  .bp-btn {
+    font: inherit; font-size: 12px; font-weight: 600; padding: 7px 8px; border-radius: 8px;
+    cursor: pointer; border: 1px solid var(--border); background: var(--page-plane); color: var(--text-primary);
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .bp-btn[data-action="deposit"]:hover { border-color: var(--status-good); color: var(--status-good); }
+  .bp-btn[data-action="withdraw"]:hover { border-color: var(--status-critical); color: var(--status-critical); }
+  .bp-btn[data-action="circuit-breaker"]:hover { border-color: var(--series-1); color: var(--series-1); }
+  .bp-btn:disabled { opacity: .5; cursor: default; }
+  .bp-msg { font-size: 11.5px; line-height: 1.4; min-height: 14px; }
+  .bp-msg.bp-msg-error { color: var(--status-critical); }
+  .bp-msg.bp-msg-success { color: var(--status-good); }
   .badge {
     display: inline-flex; align-items: center; gap: 6px;
     font-size: 13px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
@@ -746,13 +815,24 @@
     </header>
 
     <div class="tiles">
-      <div class="tile">
-        <div class="label">Initial Balance</div>
-        <div class="value">$200.00</div>
+      <div class="tile tile-balance" id="balance-tile">
+        <div class="label">Account Balance</div>
+        <div class="value" id="balance-value">$200.00</div>
+        <div class="balance-trend" id="balance-trend" hidden></div>
+        <button type="button" class="balance-actions-btn" id="balance-actions-btn" aria-label="Account actions" title="Account actions">$</button>
+        <div class="balance-popover" id="balance-popover" hidden>
+          <input type="number" id="bp-amount" class="bp-amount" placeholder="Amount ($)" min="0" step="0.01" inputmode="decimal" />
+          <div class="bp-actions">
+            <button type="button" class="bp-btn" data-action="deposit">Add Money</button>
+            <button type="button" class="bp-btn" data-action="withdraw">Withdraw</button>
+            <button type="button" class="bp-btn" data-action="circuit-breaker">Add to Circuit Breaker</button>
+          </div>
+          <div class="bp-msg" id="bp-msg"></div>
+        </div>
       </div>
       <div class="tile">
         <div class="label">Circuit Breaker Floor</div>
-        <div class="value">$160.00</div>
+        <div class="value" id="circuit-breaker-floor-value">$160.00</div>
       </div>
       <div class="tile">
         <div class="label">Current Regime (live, 14-period ATR)</div>
@@ -2042,6 +2122,114 @@
     const caaReason = document.getElementById('caa-reason');
     const caaThinking = document.getElementById('caa-thinking');
 
+    const balanceTile = document.getElementById('balance-tile');
+    const balanceValueEl = document.getElementById('balance-value');
+    const balanceTrendEl = document.getElementById('balance-trend');
+    const circuitBreakerFloorEl = document.getElementById('circuit-breaker-floor-value');
+    const balanceActionsBtn = document.getElementById('balance-actions-btn');
+    const balancePopover = document.getElementById('balance-popover');
+    const bpAmountInput = document.getElementById('bp-amount');
+    const bpMsg = document.getElementById('bp-msg');
+    let lastKnownBalance = null;
+    let balanceGlowTimer = null;
+
+    function flashBalanceTrend(direction) {
+      balanceTrendEl.hidden = false;
+      balanceTrendEl.textContent = direction === 'up' ? '▲ Bullish' : '▼ Bearish';
+      // Remove-reflow-add so the flash animation restarts even if the same
+      // direction fires twice in a row (e.g. two wins back to back).
+      balanceTrendEl.classList.remove('trend-up', 'trend-down');
+      void balanceTrendEl.offsetWidth;
+      balanceTrendEl.classList.add(direction === 'up' ? 'trend-up' : 'trend-down');
+
+      balanceTile.classList.remove('glow-green', 'glow-red');
+      void balanceTile.offsetWidth;
+      balanceTile.classList.add(direction === 'up' ? 'glow-green' : 'glow-red');
+      if (balanceGlowTimer) clearTimeout(balanceGlowTimer);
+      balanceGlowTimer = setTimeout(() => {
+        balanceTile.classList.remove('glow-green', 'glow-red');
+      }, 6000);
+    }
+
+    function updateBalanceTile(balance, circuitBreakerFloor) {
+      if (typeof balance === 'number') {
+        balanceValueEl.textContent = '$' + balance.toFixed(2);
+        if (lastKnownBalance !== null && balance !== lastKnownBalance) {
+          flashBalanceTrend(balance > lastKnownBalance ? 'up' : 'down');
+        }
+        lastKnownBalance = balance;
+      }
+      if (typeof circuitBreakerFloor === 'number') {
+        circuitBreakerFloorEl.textContent = '$' + circuitBreakerFloor.toFixed(2);
+      }
+    }
+
+    balanceActionsBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      balancePopover.hidden = !balancePopover.hidden;
+      bpMsg.textContent = '';
+      bpMsg.className = 'bp-msg';
+      if (!balancePopover.hidden) bpAmountInput.focus();
+    });
+    document.addEventListener('click', (e) => {
+      if (!balancePopover.hidden && !balancePopover.contains(e.target) && e.target !== balanceActionsBtn) {
+        balancePopover.hidden = true;
+      }
+    });
+
+    const ACCOUNT_ENDPOINTS = {
+      deposit: '/account/deposit',
+      withdraw: '/account/withdraw',
+      'circuit-breaker': '/account/circuit-breaker',
+    };
+
+    async function performAccountAction(action, btn) {
+      bpMsg.className = 'bp-msg';
+      if (!configured()) {
+        bpMsg.textContent = 'Configure a backend + control token first (Configure button above).';
+        bpMsg.className = 'bp-msg bp-msg-error';
+        return;
+      }
+      const amount = parseFloat(bpAmountInput.value);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        bpMsg.textContent = 'Enter a positive amount.';
+        bpMsg.className = 'bp-msg bp-msg-error';
+        return;
+      }
+
+      btn.disabled = true;
+      bpMsg.textContent = 'Working…';
+      try {
+        const resp = await fetch(backendUrl.replace(/\/+$/, '') + ACCOUNT_ENDPOINTS[action], {
+          method: 'POST',
+          headers: { 'X-Control-Token': controlToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ amount }),
+        });
+        const body = await resp.json().catch(() => ({}));
+        if (!resp.ok) throw new Error(body.error || ('HTTP ' + resp.status));
+
+        if (action === 'deposit') {
+          bpMsg.textContent = `Added $${amount.toFixed(2)} — new balance $${body.balance.toFixed(2)}.`;
+        } else if (action === 'withdraw') {
+          bpMsg.textContent = `Withdrew $${amount.toFixed(2)} — new balance $${body.balance.toFixed(2)}.`;
+        } else {
+          bpMsg.textContent = `Circuit breaker floor raised by $${amount.toFixed(2)} to $${body.circuit_breaker_floor.toFixed(2)}.`;
+        }
+        bpMsg.className = 'bp-msg bp-msg-success';
+        bpAmountInput.value = '';
+        pollStatus();
+      } catch (err) {
+        bpMsg.textContent = 'Failed: ' + err.message;
+        bpMsg.className = 'bp-msg bp-msg-error';
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    document.querySelectorAll('#balance-popover .bp-btn').forEach(btn => {
+      btn.addEventListener('click', () => performAccountAction(btn.dataset.action, btn));
+    });
+
     const STRATEGY_NAMES = {
       ma_crossover: 'MA Crossover (trend)',
       support_resistance: 'Support / Resistance (mean-reversion)',
@@ -2139,6 +2327,7 @@
         }
 
         activityPanel.hidden = false;
+        updateBalanceTile(data.balance, data.circuit_breaker_floor);
 
         if (typeof data.net_pnl === 'number') {
           const sign = data.net_pnl > 0 ? '+' : '';

@@ -24,6 +24,7 @@ class RiskManager:
     def __init__(self, config=Config, initial_balance: Optional[float] = None):
         self.config = config
         self.balance = initial_balance if initial_balance is not None else config.INITIAL_BALANCE
+        self.circuit_breaker_floor = config.CIRCUIT_BREAKER_BALANCE
         self.consecutive_losses = 0
         self.cooloff_until: Optional[float] = None
         self.trade_history: list[TradeResult] = []
@@ -32,7 +33,34 @@ class RiskManager:
 
     @property
     def circuit_breaker_tripped(self) -> bool:
-        return self.balance <= self.config.CIRCUIT_BREAKER_BALANCE
+        return self.balance <= self.circuit_breaker_floor
+
+    # --- Manual account actions (dashboard "add money / withdraw / raise
+    # circuit breaker" popover) -----------------------------------------------
+
+    def deposit(self, amount: float) -> None:
+        if amount <= 0:
+            raise ValueError("deposit amount must be positive")
+        self.balance += amount
+
+    def withdraw(self, amount: float) -> None:
+        if amount <= 0:
+            raise ValueError("withdrawal amount must be positive")
+        if amount > self.balance:
+            raise ValueError("cannot withdraw more than the current balance")
+        self.balance -= amount
+
+    def raise_circuit_breaker_floor(self, amount: float) -> None:
+        """Manually raises the halt floor -- e.g. to lock in more of the
+        current balance as a protected cushion. Rejected if it would put the
+        floor at or above the current balance, since that would trip the
+        breaker immediately."""
+        if amount <= 0:
+            raise ValueError("amount must be positive")
+        new_floor = self.circuit_breaker_floor + amount
+        if new_floor >= self.balance:
+            raise ValueError("circuit breaker floor cannot reach or exceed the current balance")
+        self.circuit_breaker_floor = new_floor
 
     # --- Position sizing -------------------------------------------------------
 

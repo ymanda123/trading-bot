@@ -1,6 +1,10 @@
 """Control-plane API for the trading bot: exposes /start, /stop, /status,
 /assets, /news, and /candles so the public dashboard can pick an asset,
-toggle the live trade loop on and off, and see what it's doing.
+toggle the live trade loop on and off, and see what it's doing. Also exposes
+/account/deposit, /account/withdraw, and /account/circuit-breaker for the
+dashboard's balance-tile popover -- demo-only manual controls to add/remove
+paper capital or raise the circuit breaker's halt floor, separate from the
+bot's actual trading logic.
 
 Runs the bot loop on a background thread inside this process. Note that
 bot.py's TradingBot only *simulates* fills against live prices -- it never
@@ -11,10 +15,10 @@ Config.SUPPORTED_ASSETS to trade; switching symbols always starts a fresh
 bot (balance/streaks reset) since carrying state across markets wouldn't
 mean anything.
 
-/start and /stop require a shared control token (CONTROL_TOKEN env var)
-sent via the X-Control-Token header, so a stranger with the dashboard URL
-can't flip the switch. /status, /assets, /news, and /candles are read-only
-and unauthenticated.
+/start, /stop, and /account/* require a shared control token (CONTROL_TOKEN
+env var) sent via the X-Control-Token header, so a stranger with the
+dashboard URL can't flip the switch or touch the balance. /status, /assets,
+/news, and /candles are read-only and unauthenticated.
 """
 
 import json
@@ -47,7 +51,7 @@ _state_lock = threading.Lock()
 _bot = None
 _loop_thread = None
 _running = threading.Event()
-# Set for the ~5-10s a step() call is actually mid-flight (Groq call +
+# Set for the ~5-10s a step() call is actually mid-flight (Gemini call +
 # backtest grid search), cleared the rest of the ~POLL_SECONDS cycle. /status
 # exposes this so the dashboard can show a "thinking" indicator instead of
 # looking frozen between decisions. Event.is_set()/set()/clear() are already
@@ -56,7 +60,7 @@ _stepping = threading.Event()
 
 # --- Chat assistant rate limiting -------------------------------------------
 # The chat endpoint is unauthenticated (anyone with the dashboard URL can use
-# it), so it shares a free-tier Groq quota with every other visitor. This is
+# it), so it shares a free-tier Gemini quota with every other visitor. This is
 # a simple per-IP sliding-window limiter, not a defense against a determined
 # attacker -- just enough to stop one visitor (or one bug in the frontend
 # retry logic) from burning the whole site's quota.
@@ -193,6 +197,93 @@ def stop():
     return jsonify(status="stopped")
 
 
+def _account_amount_from_request(req) -> float | None:
+    """Pulls a positive numeric "amount" out of a JSON body for the
+    /account/* endpoints below. Returns None if missing/non-numeric/non-
+    positive so callers can 400 without duplicating the check three times."""
+    body = req.get_json(silent=True) or {}
+    amount = body.get("amount")
+    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount <= 0:
+        return None
+    return float(amount)
+
+
+@app.post("/account/deposit")
+def account_deposit():
+    """Dashboard's balance-tile popover -- "Add Money". Demo-only manual
+    account control, not part of the bot's actual trading logic. Creates a
+    bot instance (without starting its trade loop) if one doesn't exist yet,
+    same as /start does, so this works even before the first /start call.
+    Control-token gated like /start and /stop since it mutates state."""
+    if not _authorized(request):
+        return jsonify(error="unauthorized"), 401
+
+    amount = _account_amount_from_request(request)
+    if amount is None:
+        return jsonify(error="amount must be a positive number"), 400
+
+    global _bot
+    with _state_lock:
+        if _bot is None:
+            _bot = TradingBot()
+        _bot.risk_manager.deposit(amount)
+        balance = _bot.risk_manager.balance
+
+    return jsonify(status="ok", balance=round(balance, 2))
+
+
+@app.post("/account/withdraw")
+def account_withdraw():
+    """Dashboard's balance-tile popover -- "Withdraw". Same scope and gating
+    as /account/deposit; fails with 400 rather than allowing the balance to
+    go negative."""
+    if not _authorized(request):
+        return jsonify(error="unauthorized"), 401
+
+    amount = _account_amount_from_request(request)
+    if amount is None:
+        return jsonify(error="amount must be a positive number"), 400
+
+    global _bot
+    with _state_lock:
+        if _bot is None:
+            _bot = TradingBot()
+        try:
+            _bot.risk_manager.withdraw(amount)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        balance = _bot.risk_manager.balance
+
+    return jsonify(status="ok", balance=round(balance, 2))
+
+
+@app.post("/account/circuit-breaker")
+def account_raise_circuit_breaker():
+    """Dashboard's balance-tile popover -- "Add to Circuit Breaker". Raises
+    the halt floor (RiskManager.circuit_breaker_floor) rather than the
+    balance, e.g. to lock in more of the current balance as a protected
+    cushion. Same scope and gating as /account/deposit; fails with 400 if the
+    new floor would reach or exceed the current balance."""
+    if not _authorized(request):
+        return jsonify(error="unauthorized"), 401
+
+    amount = _account_amount_from_request(request)
+    if amount is None:
+        return jsonify(error="amount must be a positive number"), 400
+
+    global _bot
+    with _state_lock:
+        if _bot is None:
+            _bot = TradingBot()
+        try:
+            _bot.risk_manager.raise_circuit_breaker_floor(amount)
+        except ValueError as exc:
+            return jsonify(error=str(exc)), 400
+        floor = _bot.risk_manager.circuit_breaker_floor
+
+    return jsonify(status="ok", circuit_breaker_floor=round(floor, 2))
+
+
 @app.post("/debug/force-trade")
 def force_trade():
     """TEMPORARY, test-only -- opens one real paper position immediately
@@ -277,6 +368,7 @@ def status():
         net_pnl=round(rm.balance - bot.config.INITIAL_BALANCE, 2),
         consecutive_losses=rm.consecutive_losses,
         circuit_breaker_tripped=rm.circuit_breaker_tripped,
+        circuit_breaker_floor=round(rm.circuit_breaker_floor, 2),
         in_cooloff=rm.is_in_cooloff(),
         next_trade_size_pct=size_pct,
         next_trade_atr_stop_multiple=atr_stop_multiple,
@@ -356,7 +448,7 @@ def _status_context_text() -> str:
 @app.post("/chat")
 def chat():
     """Read-only, unauthenticated -- public chat assistant for the website.
-    Uses the same free Groq API as ai_strategy.py but never touches trading
+    Uses the same free Gemini API as ai_strategy.py but never touches trading
     logic; it can only describe what the bot is doing, not change it. Rate
     limited per IP (see _chat_rate_limited) to protect the shared free-tier
     quota."""
