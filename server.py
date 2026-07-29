@@ -268,42 +268,6 @@ def chat():
     return jsonify(reply=reply)
 
 
-@app.get("/diag/groq")
-def diag_groq():
-    """TEMPORARY -- added to debug a live "GROQ_API_KEY missing" failure,
-    remove once resolved. Read-only, no secrets exposed (never echoes the
-    key itself, only whether it's set and its length), rate-limited via the
-    same per-IP limiter as /chat since it makes one real Groq call. Reports
-    the exception TYPE and message on failure so a config problem (missing
-    key, bad key, network) can be told apart from a code problem without
-    needing direct access to server logs."""
-    ip = request.headers.get("X-Forwarded-For", request.remote_addr or "unknown").split(",")[0].strip()
-    if _chat_rate_limited(ip):
-        return jsonify(error="rate_limited"), 429
-
-    key = os.environ.get("GROQ_API_KEY", "")
-    result = {"key_present": bool(key), "key_length": len(key)}
-    if not key:
-        result["status"] = "missing"
-        return jsonify(result)
-
-    try:
-        from groq import Groq
-        client = Groq(api_key=key)
-        resp = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": "Reply with only the word OK."}],
-            max_tokens=5,
-        )
-        result["status"] = "ok"
-        result["sample_reply"] = resp.choices[0].message.content
-    except Exception as exc:
-        result["status"] = "error"
-        result["error_type"] = type(exc).__name__
-        result["error_message"] = str(exc)[:300]
-    return jsonify(result)
-
-
 @app.get("/live-tv")
 def live_tv():
     """Read-only, unauthenticated -- resolves each network's currently-live
