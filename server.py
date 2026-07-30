@@ -439,6 +439,7 @@ def status():
             "entry_price": round(pos["entry_price"], 2),
             "quantity": round(pos["quantity"], 6),
             "stop_price": round(pos["stop_price"], 2),
+            "opened_at": pos.get("opened_at"),
         }
         if bot.last_price is not None:
             # Mirrors bot.py's _check_exit math exactly (gross price move,
